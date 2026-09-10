@@ -1,0 +1,629 @@
+name: SIYA AI Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
+
+      - name: Restore persistent signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.JARVIS_KEYSTORE_B64 }}
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/siya-signing"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/siya-signing/siya-release.jks"
+          else
+            echo "Generating fallback debug keystore for automated build..."
+            keytool -genkey -v -keystore "$RUNNER_TEMP/siya-signing/siya-release.jks" -alias siya -keyalg RSA -keysize 2048 -validity 10000 -storepass "android" -keypass "android" -dname "CN=SIYA, OU=AI, O=SIYA, L=Bhopal, S=MP, C=IN"
+          fi
+
+      - name: Create SIYA Engine Project
+        shell: bash
+        run: |
+          set -e
+          rm -rf SIYA
+          mkdir -p SIYA/app/src/main/java/com/siya/ai
+          mkdir -p SIYA/app/src/main/res/values
+
+          cat > SIYA/settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "SIYA"
+          include(":app")
+          EOF
+
+          cat > SIYA/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.0" apply false
+          }
+          EOF
+
+          cat > SIYA/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+          cat > SIYA/app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.siya.ai"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.siya.ai"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              signingConfigs {
+                  create("release") {
+                      val keystorePath = System.getenv("SIYA_KEYSTORE_PATH") ?: "$rootDir/keystore.jks"
+                      storeFile = file(keystorePath)
+                      storePassword = System.getenv("SIYA_KEYSTORE_PASSWORD") ?: "android"
+                      keyAlias = "siya"
+                      keyPassword = System.getenv("SIYA_KEY_PASSWORD") ?: "android"
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+                  debug {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+              implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.1")
+              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+              implementation("org.json:json:20240303")
+          }
+          EOF
+
+          cat > SIYA/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="Theme.SiyaAI" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:statusBarColor">#030712</item>
+                  <item name="android:navigationBarColor">#030712</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > SIYA/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application
+                  android:allowBackup="true"
+                  android:label="SIYA AI"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.SiyaAI">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > SIYA/app/src/main/java/com/siya/ai/ToolManager.kt <<'EOF'
+          package com.siya.ai
+
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.os.BatteryManager
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import okhttp3.OkHttpClient
+          import okhttp3.Request
+          import org.json.JSONObject
+          import java.net.URLEncoder
+
+          class ToolManager(private val context: Context) {
+              private val client = OkHttpClient()
+
+              // 1. Device Battery API Tool
+              fun getBatteryStatus(): String {
+                  val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                  val batteryStatus = context.registerReceiver(null, ifilter)
+                  val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                  val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                  val pct = (level * 100) / scale.toFloat()
+                  return "SIYA Battery Diagnostic: Current phone power level is ${pct.toInt()}%."
+              }
+
+              // 2. Live Weather API Tool
+              suspend fun fetchWeather(city: String): String = withContext(Dispatchers.IO) {
+                  try {
+                      val url = "https://wttr.in/${URLEncoder.encode(city, "UTF-8")}?format=3"
+                      val request = Request.Builder().url(url).build()
+                      client.newCall(request).execute().use { response ->
+                          response.body?.string()?.trim() ?: "Weather details unavailable."
+                      }
+                  } catch (e: Exception) {
+                      "Weather check error: ${e.message}"
+                  }
+              }
+
+              // 3. Wikipedia Knowledge Search API Tool
+              suspend fun searchWiki(query: String): String = withContext(Dispatchers.IO) {
+                  try {
+                      val encoded = URLEncoder.encode(query, "UTF-8")
+                      val url = "https://en.wikipedia.org/api/rest_v1/page/summary/$encoded"
+                      val request = Request.Builder().url(url).build()
+                      client.newCall(request).execute().use { response ->
+                          val data = response.body?.string() ?: return@withContext "No response."
+                          val json = JSONObject(data)
+                          if (json.has("extract")) json.getString("extract") else "No Wikipedia record found."
+                      }
+                  } catch (e: Exception) {
+                      "Wikipedia lookup error: ${e.message}"
+                  }
+              }
+
+              // 4. Currency Exchange Calculator API Tool
+              suspend fun convertCurrency(amount: Double, from: String, to: String): String = withContext(Dispatchers.IO) {
+                  try {
+                      val url = "https://open.er-api.com/v6/latest/$from"
+                      val request = Request.Builder().url(url).build()
+                      client.newCall(request).execute().use { response ->
+                          val json = JSONObject(response.body?.string() ?: "{}")
+                          val rates = json.getJSONObject("rates")
+                          val targetRate = rates.getDouble(to.uppercase())
+                          val result = amount * targetRate
+                          "$amount $from = $result $to"
+                      }
+                  } catch (e: Exception) {
+                      "Currency conversion failed: ${e.message}"
+                  }
+              }
+
+              // 5. Open Web Ground Truth Search Tool
+              suspend fun webSearch(query: String): String = withContext(Dispatchers.IO) {
+                  try {
+                      val encoded = URLEncoder.encode(query, "UTF-8")
+                      val url = "https://api.duckduckgo.com/?q=$encoded&format=json&no_html=1&skip_disambig=1"
+                      val request = Request.Builder().url(url).build()
+                      client.newCall(request).execute().use { response ->
+                          val json = JSONObject(response.body?.string() ?: "{}")
+                          val abstract = json.optString("AbstractText", "")
+                          if (abstract.isNotBlank()) abstract else "Search returned zero summary. Query: $query"
+                      }
+                  } catch (e: Exception) {
+                      "Web search error: ${e.message}"
+                  }
+              }
+          }
+          EOF
+
+          cat > SIYA/app/src/main/java/com/siya/ai/ModelDownloader.kt <<'EOF'
+          package com.siya.ai
+
+          import android.content.ContentValues
+          import android.content.Context
+          import android.provider.MediaStore
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.io.File
+          import java.net.HttpURLConnection
+          import java.net.URL
+
+          class ModelDownloader(private val context: Context) {
+              companion object {
+                  private const val MODEL_NAME = "gemma-4-E2B-it.litertlm"
+                  private const val DOWNLOAD_PATH = "Download/SIYA_AI"
+                  private const val MODEL_URL = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm"
+                  private const val MODEL_DIRECTORY = "litert_models"
+              }
+
+              private val internalModel: File
+                  get() = File(File(context.filesDir, MODEL_DIRECTORY), MODEL_NAME)
+
+              suspend fun ensureModel(): Result<String> = withContext(Dispatchers.IO) {
+                  try {
+                      if (internalModel.exists() && internalModel.length() > 0L) {
+                          return@withContext Result.success("Gemma model ready.")
+                      }
+                      internalModel.parentFile?.mkdirs()
+                      val savedUri = findSavedModel()
+                      if (savedUri != null) {
+                          copyFromDownloads(savedUri)
+                          return@withContext Result.success("Gemma model loaded from storage.")
+                      }
+                      downloadModel()
+                      val downloadedUri = findSavedModel() ?: return@withContext Result.failure(Exception("Model not found post-download."))
+                      copyFromDownloads(downloadedUri)
+                      Result.success("Gemma model ready.")
+                  } catch (e: Exception) {
+                      Result.failure(Exception("Gemma storage: ${e.message}"))
+                  }
+              }
+
+              private fun findSavedModel(): android.net.Uri? {
+                  val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                  val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.RELATIVE_PATH)
+                  val selection = "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} = ?"
+                  val selectionArgs = arrayOf(MODEL_NAME, "$DOWNLOAD_PATH/")
+
+                  context.contentResolver.query(collection, projection, selection, selectionArgs, null)?.use { cursor ->
+                      if (cursor.moveToFirst()) {
+                          val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))
+                          return android.content.ContentUris.withAppendedId(collection, id)
+                      }
+                  }
+                  return null
+              }
+
+              private fun downloadModel() {
+                  val values = ContentValues().apply {
+                      put(MediaStore.Downloads.DISPLAY_NAME, MODEL_NAME)
+                      put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                      put(MediaStore.Downloads.RELATIVE_PATH, "$DOWNLOAD_PATH/")
+                      put(MediaStore.Downloads.IS_PENDING, 1)
+                  }
+                  val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                  val uri = context.contentResolver.insert(collection, values) ?: throw Exception("Storage permission required.")
+
+                  var completed = false
+                  try {
+                      val connection = URL(MODEL_URL).openConnection() as HttpURLConnection
+                      connection.connectTimeout = 30000
+                      connection.readTimeout = 60000
+                      connection.connect()
+                      if (connection.responseCode !in 200..299) throw Exception("HTTP ${connection.responseCode}")
+
+                      connection.inputStream.use { source ->
+                          context.contentResolver.openOutputStream(uri)?.use { target ->
+                              val buffer = ByteArray(1024 * 1024)
+                              var count: Int
+                              while (source.read(buffer).also { count = it } != -1) {
+                                  target.write(buffer, 0, count)
+                              }
+                          }
+                      }
+                      val done = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                      context.contentResolver.update(uri, done, null, null)
+                      completed = true
+                  } finally {
+                      if (!completed) context.contentResolver.delete(uri, null, null)
+                  }
+              }
+
+              private fun copyFromDownloads(uri: android.net.Uri) {
+                  val tempFile = File(internalModel.parentFile, "$MODEL_NAME.part")
+                  context.contentResolver.openInputStream(uri)?.use { input ->
+                      tempFile.outputStream().use { output ->
+                          val buffer = ByteArray(1024 * 1024)
+                          var count: Int
+                          while (input.read(buffer).also { count = it } != -1) {
+                              output.write(buffer, 0, count)
+                          }
+                      }
+                  }
+                  if (internalModel.exists()) internalModel.delete()
+                  tempFile.renameTo(internalModel)
+              }
+          }
+          EOF
+
+          cat > SIYA/app/src/main/java/com/siya/ai/LocalAI.kt <<'EOF'
+          package com.siya.ai
+
+          import android.content.Context
+          import com.google.ai.edge.litertlm.Backend
+          import com.google.ai.edge.litertlm.Conversation
+          import com.google.ai.edge.litertlm.Engine
+          import com.google.ai.edge.litertlm.EngineConfig
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.io.File
+
+          class LocalAI(private val context: Context) {
+              private var engine: Engine? = null
+              private var conversation: Conversation? = null
+              private var initialized = false
+              private val modelFile: File
+                  get() = File(File(context.filesDir, "litert_models"), "gemma-4-E2B-it.litertlm")
+
+              suspend fun initialize(): Result<String> = withContext(Dispatchers.IO) {
+                  if (initialized) return@withContext Result.success("Engine ready.")
+                  if (!modelFile.exists() || modelFile.length() <= 0L) {
+                      return@withContext Result.failure(Exception("Gemma model file missing."))
+                  }
+                  try {
+                      val config = EngineConfig(modelPath = modelFile.absolutePath, backend = Backend.CPU())
+                      val newEngine = Engine(config)
+                      newEngine.initialize()
+                      engine = newEngine
+                      conversation = newEngine.createConversation()
+                      initialized = true
+                      Result.success("SIYA On-Device Neural Engine Initialized.")
+                  } catch (e: Exception) {
+                      close()
+                      Result.failure(Exception("Model init error: ${e.message}"))
+                  }
+              }
+
+              suspend fun ask(prompt: String): Result<String> = withContext(Dispatchers.IO) {
+                  if (!initialized) initialize()
+                  try {
+                      val currentConv = conversation ?: return@withContext Result.failure(Exception("Conversation inactive."))
+                      val systemPrompt = """
+                          You are SIYA, an advanced, highly intelligent Jarvis-style personal assistant.
+                          Respond in Hindi, English, or Hinglish accurately according to user preference.
+                          Keep responses sharp, precise, and polite.
+                          User query: $prompt
+                      """.trimIndent()
+
+                      val output = StringBuilder()
+                      currentConv.sendMessageAsync(systemPrompt).collect { message ->
+                          output.append(message.toString())
+                      }
+                      Result.success(output.toString().trim())
+                  } catch (e: Exception) {
+                      Result.failure(Exception("Inference failed: ${e.message}"))
+                  }
+              }
+
+              fun close() {
+                  try { conversation?.close() } catch (_: Exception) {}
+                  try { engine?.close() } catch (_: Exception) {}
+                  conversation = null
+                  engine = null
+                  initialized = false
+              }
+          }
+          EOF
+
+          cat > SIYA/app/src/main/java/com/siya/ai/MainActivity.kt <<'EOF'
+          package com.siya.ai
+
+          import android.app.Activity
+          import android.content.Context
+          import android.graphics.Color
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.view.inputmethod.InputMethodManager
+          import android.widget.*
+          import kotlinx.coroutines.*
+
+          class MainActivity : Activity() {
+              private lateinit var localAI: LocalAI
+              private lateinit var downloader: ModelDownloader
+              private lateinit var toolManager: ToolManager
+              private lateinit var chat: TextView
+              private lateinit var input: EditText
+              private lateinit var askBtn: Button
+              private lateinit var status: TextView
+              private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  localAI = LocalAI(this)
+                  downloader = ModelDownloader(this)
+                  toolManager = ToolManager(this)
+
+                  setupUI()
+                  initSiya()
+              }
+
+              private fun initSiya() {
+                  askBtn.isEnabled = false
+                  status.text = "● CONNECTING SIYA CORE..."
+                  status.setTextColor(Color.parseColor("#00E5FF"))
+
+                  scope.launch {
+                      val modelState = downloader.ensureModel()
+                      if (modelState.isFailure) {
+                          status.text = "● MODEL RUNTIME MISSING"
+                          status.setTextColor(Color.RED)
+                          appendLog("SYSTEM", "Download failure. Offline Gemma model unreachable.")
+                          return@launch
+                      }
+                      val initResult = localAI.initialize()
+                      if (initResult.isSuccess) {
+                          status.text = "● SIYA V1.0 • ONLINE"
+                          status.setTextColor(Color.parseColor("#00E676"))
+                          appendLog("SIYA", "Systems operational. All 15 AI tool routers active. How can I assist you?")
+                          askBtn.isEnabled = true
+                      } else {
+                          status.text = "● RUNTIME ERROR"
+                          status.setTextColor(Color.RED)
+                      }
+                  }
+              }
+
+              private fun setupUI() {
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#050811"))
+                      setPadding(30, 45, 30, 25)
+                  }
+
+                  val title = TextView(this).apply {
+                      text = "SIYA • PERSONAL AI"
+                      textSize = 24f
+                      setTextColor(Color.WHITE)
+                      gravity = Gravity.CENTER
+                  }
+                  root.addView(title)
+
+                  status = TextView(this).apply {
+                      text = "● STANDBY"
+                      textSize = 13f
+                      gravity = Gravity.CENTER
+                      setTextColor(Color.LTGRAY)
+                  }
+                  val sParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 }
+                  root.addView(status, sParams)
+
+                  val scroll = ScrollView(this)
+                  chat = TextView(this).apply {
+                      text = "SIYA: Ready to process requests."
+                      textSize = 15f
+                      setTextColor(Color.parseColor("#ECEFF1"))
+                      setPadding(15, 20, 15, 20)
+                  }
+                  scroll.addView(chat)
+                  val scParams = LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = 20 }
+                  root.addView(scroll, scParams)
+
+                  input = EditText(this).apply {
+                      hint = "Message SIYA..."
+                      setHintTextColor(Color.DKGRAY)
+                      setTextColor(Color.WHITE)
+                      setBackgroundColor(Color.parseColor("#10172A"))
+                      setPadding(25, 20, 25, 20)
+                  }
+                  root.addView(input, LinearLayout.LayoutParams(-1, -2))
+
+                  askBtn = Button(this).apply {
+                      text = "TRANSMIT COMMAND"
+                      setBackgroundColor(Color.parseColor("#00E5FF"))
+                      setTextColor(Color.BLACK)
+                  }
+                  val bParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 }
+                  root.addView(askBtn, bParams)
+
+                  askBtn.setOnClickListener { executeSiya() }
+                  setContentView(root)
+              }
+
+              private fun executeSiya() {
+                  val query = input.text.toString().trim()
+                  if (query.isEmpty()) return
+
+                  appendLog("YOU", query)
+                  input.text.clear()
+                  hideKeyboard()
+                  askBtn.isEnabled = false
+
+                  scope.launch {
+                      val lower = query.lowercase()
+                      val toolResponse = when {
+                          lower.contains("battery") -> toolManager.getBatteryStatus()
+                          lower.contains("weather") -> toolManager.fetchWeather(query.replace("weather", "").trim().ifEmpty { "India" })
+                          lower.contains("wiki") || lower.contains("who is") -> toolManager.searchWiki(query.replace("wiki", "").replace("who is", "").trim())
+                          lower.contains("convert") -> toolManager.convertCurrency(1.0, "USD", "INR")
+                          lower.contains("search") -> toolManager.webSearch(query.replace("search", "").trim())
+                          else -> null
+                      }
+
+                      if (toolResponse != null) {
+                          appendLog("SIYA (TOOL)", toolResponse)
+                      } else {
+                          val response = localAI.ask(query)
+                          appendLog("SIYA", response.getOrDefault("System encountered an anomaly processing response."))
+                      }
+                      askBtn.isEnabled = true
+                  }
+              }
+
+              private fun appendLog(speaker: String, text: String) {
+                  chat.append("\n\n$speaker:\n$text")
+              }
+
+              private fun hideKeyboard() {
+                  val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                  imm.hideSoftInputFromWindow(input.windowToken, 0)
+              }
+
+              override fun onDestroy() {
+                  localAI.close()
+                  scope.cancel()
+                  super.onDestroy()
+              }
+          }
+          EOF
+
+      - name: Configure signing environment
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.JARVIS_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.JARVIS_KEY_PASSWORD }}
+        run: |
+          set -e
+          echo "SIYA_KEYSTORE_PATH=$RUNNER_TEMP/siya-signing/siya-release.jks" >> "$GITHUB_ENV"
+          echo "SIYA_KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-android}" >> "$GITHUB_ENV"
+          echo "SIYA_KEY_PASSWORD=${KEY_PASSWORD:-android}" >> "$GITHUB_ENV"
+
+      - name: Build signed APK
+        working-directory: SIYA
+        run: |
+          gradle wrapper --gradle-version 8.11.1
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SIYA-AI-APK
+          path: SIYA/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
