@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -37,18 +39,31 @@ jobs:
         with:
           gradle-version: 8.11.1
 
-      - name: Restore persistent signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.JARVIS_KEYSTORE_B64 }}
+      - name: Setup Permanent Signing Key
         run: |
           set -e
-          mkdir -p "$RUNNER_TEMP/siya-signing"
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/siya-signing/siya-release.jks"
-          else
-            echo "Generating fallback debug keystore for automated build..."
-            keytool -genkey -v -keystore "$RUNNER_TEMP/siya-signing/siya-release.jks" -alias siya -keyalg RSA -keysize 2048 -validity 10000 -storepass "android" -keypass "android" -dname "CN=SIYA, OU=AI, O=SIYA, L=Bhopal, S=MP, C=IN"
+          mkdir -p keystore
+          if [ ! -f "keystore/siya.jks" ]; then
+            echo "Generating fixed permanent release keystore..."
+            keytool -genkey -v \
+              -keystore keystore/siya.jks \
+              -alias siya \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "SiyaRelease123" \
+              -keypass "SiyaRelease123" \
+              -dname "CN=SIYA, OU=AI, O=SIYA, L=Bhopal, S=MP, C=IN"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add keystore/siya.jks
+            git commit -m "Add permanent fixed keystore for seamless updates"
+            git push
           fi
+          echo "SIYA_KEYSTORE_PATH=$GITHUB_WORKSPACE/keystore/siya.jks" >> "$GITHUB_ENV"
+          echo "SIYA_KEYSTORE_PASSWORD=SiyaRelease123" >> "$GITHUB_ENV"
+          echo "SIYA_KEY_PASSWORD=SiyaRelease123" >> "$GITHUB_ENV"
 
       - name: Create SIYA Engine Project
         shell: bash
@@ -110,11 +125,11 @@ jobs:
 
               signingConfigs {
                   create("release") {
-                      val keystorePath = System.getenv("SIYA_KEYSTORE_PATH") ?: "$rootDir/keystore.jks"
+                      val keystorePath = System.getenv("SIYA_KEYSTORE_PATH") ?: error("Keystore missing")
                       storeFile = file(keystorePath)
-                      storePassword = System.getenv("SIYA_KEYSTORE_PASSWORD") ?: "android"
+                      storePassword = System.getenv("SIYA_KEYSTORE_PASSWORD") ?: "SiyaRelease123"
                       keyAlias = "siya"
-                      keyPassword = System.getenv("SIYA_KEY_PASSWORD") ?: "android"
+                      keyPassword = System.getenv("SIYA_KEY_PASSWORD") ?: "SiyaRelease123"
                   }
               }
 
@@ -190,17 +205,15 @@ jobs:
           class ToolManager(private val context: Context) {
               private val client = OkHttpClient()
 
-              // 1. Device Battery API Tool
               fun getBatteryStatus(): String {
                   val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
                   val batteryStatus = context.registerReceiver(null, ifilter)
                   val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                   val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
                   val pct = (level * 100) / scale.toFloat()
-                  return "SIYA Battery Diagnostic: Current phone power level is ${pct.toInt()}%."
+                  return "SIYA Battery Diagnostic: Current device power is ${pct.toInt()}%."
               }
 
-              // 2. Live Weather API Tool
               suspend fun fetchWeather(city: String): String = withContext(Dispatchers.IO) {
                   try {
                       val url = "https://wttr.in/${URLEncoder.encode(city, "UTF-8")}?format=3"
@@ -213,7 +226,6 @@ jobs:
                   }
               }
 
-              // 3. Wikipedia Knowledge Search API Tool
               suspend fun searchWiki(query: String): String = withContext(Dispatchers.IO) {
                   try {
                       val encoded = URLEncoder.encode(query, "UTF-8")
@@ -229,7 +241,6 @@ jobs:
                   }
               }
 
-              // 4. Currency Exchange Calculator API Tool
               suspend fun convertCurrency(amount: Double, from: String, to: String): String = withContext(Dispatchers.IO) {
                   try {
                       val url = "https://open.er-api.com/v6/latest/$from"
@@ -246,7 +257,6 @@ jobs:
                   }
               }
 
-              // 5. Open Web Ground Truth Search Tool
               suspend fun webSearch(query: String): String = withContext(Dispatchers.IO) {
                   try {
                       val encoded = URLEncoder.encode(query, "UTF-8")
@@ -299,7 +309,7 @@ jobs:
                           return@withContext Result.success("Gemma model loaded from storage.")
                       }
                       downloadModel()
-                      val downloadedUri = findSavedModel() ?: return@withContext Result.failure(Exception("Model not found post-download."))
+                      val downloadedUri = findSavedModel() ?: return@withContext Result.failure(Exception("Model missing post-download."))
                       copyFromDownloads(downloadedUri)
                       Result.success("Gemma model ready.")
                   } catch (e: Exception) {
@@ -396,7 +406,7 @@ jobs:
               suspend fun initialize(): Result<String> = withContext(Dispatchers.IO) {
                   if (initialized) return@withContext Result.success("Engine ready.")
                   if (!modelFile.exists() || modelFile.length() <= 0L) {
-                      return@withContext Result.failure(Exception("Gemma model file missing."))
+                      return@withContext Result.failure(Exception("Gemma model missing."))
                   }
                   try {
                       val config = EngineConfig(modelPath = modelFile.absolutePath, backend = Backend.CPU())
@@ -493,7 +503,7 @@ jobs:
                       if (initResult.isSuccess) {
                           status.text = "● SIYA V1.0 • ONLINE"
                           status.setTextColor(Color.parseColor("#00E676"))
-                          appendLog("SIYA", "Systems operational. All 15 AI tool routers active. How can I assist you?")
+                          appendLog("SIYA", "Systems operational. All AI tool routers active. How can I assist you?")
                           askBtn.isEnabled = true
                       } else {
                           status.text = "● RUNTIME ERROR"
@@ -605,25 +615,16 @@ jobs:
           }
           EOF
 
-      - name: Configure signing environment
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.JARVIS_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.JARVIS_KEY_PASSWORD }}
-        run: |
-          set -e
-          echo "SIYA_KEYSTORE_PATH=$RUNNER_TEMP/siya-signing/siya-release.jks" >> "$GITHUB_ENV"
-          echo "SIYA_KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-android}" >> "$GITHUB_ENV"
-          echo "SIYA_KEY_PASSWORD=${KEY_PASSWORD:-android}" >> "$GITHUB_ENV"
-
-      - name: Build signed APK
+      - name: Build SIYA Signed APK
         working-directory: SIYA
         run: |
           gradle wrapper --gradle-version 8.11.1
           ./gradlew assembleRelease --stacktrace
 
-      - name: Upload APK
+      - name: Upload SIYA APK
         uses: actions/upload-artifact@v4
         with:
           name: SIYA-AI-APK
           path: SIYA/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+0
