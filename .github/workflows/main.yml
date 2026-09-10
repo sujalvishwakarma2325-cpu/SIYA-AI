@@ -120,8 +120,8 @@ jobs:
                   applicationId = "com.siya.ai"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 1
-                  versionName = "1.0"
+                  versionCode = 2
+                  versionName = "1.1"
               }
 
               signingConfigs {
@@ -205,19 +205,21 @@ jobs:
           import android.os.BatteryManager
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.withContext
+          import okhttp3.MediaType.Companion.toMediaType
           import okhttp3.OkHttpClient
           import okhttp3.Request
+          import okhttp3.RequestBody.Companion.toRequestBody
+          import org.json.JSONArray
           import org.json.JSONObject
           import java.net.URLEncoder
           import java.util.concurrent.TimeUnit
 
           class ToolManager(private val context: Context) {
               private val client = OkHttpClient.Builder()
-                  .connectTimeout(20, TimeUnit.SECONDS)
-                  .readTimeout(30, TimeUnit.SECONDS)
+                  .connectTimeout(15, TimeUnit.SECONDS)
+                  .readTimeout(25, TimeUnit.SECONDS)
                   .build()
 
-              // 1. Device Battery Level & State
               fun getBatteryStatus(): String {
                   val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
                   val batteryStatus = context.registerReceiver(null, ifilter)
@@ -226,15 +228,14 @@ jobs:
                   val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
                   val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
                   val pct = (level * 100) / scale.toFloat()
-                  val chargeState = if (isCharging) "Charging connect hai" else "Battery par chal raha hai"
+                  val chargeState = if (isCharging) "Charging connect hai ⚡" else "Battery par chal raha hai"
                   return "Aapka phone abhi ${pct.toInt()}% charged hai. ($chargeState)"
               }
 
-              // 2. Weather Engine
               suspend fun fetchWeather(city: String): String = withContext(Dispatchers.IO) {
                   try {
                       val cleanCity = if (city.isBlank()) "Bhopal" else city.trim()
-                      val url = "https://wttr.in/${URLEncoder.encode(cleanCity, "UTF-8")}?format=%C:+%t+(Humidity:+%h,+Wind:+%w)"
+                      val url = "https://wttr.in/${URLEncoder.encode(cleanCity, "UTF-8")}?format=%C:+%t+(Humidity:+%h)"
                       val request = Request.Builder()
                           .url(url)
                           .header("User-Agent", "curl/7.68.0")
@@ -242,9 +243,9 @@ jobs:
                       client.newCall(request).execute().use { response ->
                           val text = response.body?.string()?.trim() ?: ""
                           if (text.isNotBlank() && !text.contains("<html")) {
-                              "Mausam update ($cleanCity): $text"
+                              "Mausam report ($cleanCity): $text"
                           } else {
-                              "Mausam ki jankari abhi fetch nahi ho payi."
+                              "Mausam jankari fetch nahi ho saki."
                           }
                       }
                   } catch (e: Exception) {
@@ -252,7 +253,6 @@ jobs:
                   }
               }
 
-              // 3. Wikipedia Summary
               suspend fun searchWiki(query: String): String = withContext(Dispatchers.IO) {
                   try {
                       val encoded = URLEncoder.encode(query.trim(), "UTF-8")
@@ -261,14 +261,13 @@ jobs:
                       client.newCall(request).execute().use { response ->
                           val data = response.body?.string() ?: return@withContext "No response."
                           val json = JSONObject(data)
-                          if (json.has("extract")) json.getString("extract") else "Wikipedia par koi record nahi mila."
+                          if (json.has("extract")) json.getString("extract") else "Wikipedia par koi summary nahi mili."
                       }
                   } catch (e: Exception) {
                       "Wiki lookup failed: ${e.message}"
                   }
               }
 
-              // 4. Currency Conversion
               suspend fun convertCurrency(amount: Double, from: String, to: String): String = withContext(Dispatchers.IO) {
                   try {
                       val url = "https://open.er-api.com/v6/latest/$from"
@@ -285,23 +284,73 @@ jobs:
                   }
               }
 
-              // 5. Intelligent Cloud AI Router (Jarvis-style zero-config brain)
-              suspend fun askCloudAI(prompt: String): String = withContext(Dispatchers.IO) {
+              suspend fun askFreeCloudAI(prompt: String): String = withContext(Dispatchers.IO) {
                   try {
-                      val sys = "You are SIYA, an advanced, highly capable personal AI assistant created for the user. Reply in natural, friendly Hinglish or Hindi. Keep it concise, witty, and accurate like Jarvis."
-                      val encodedPrompt = URLEncoder.encode(prompt, "UTF-8")
-                      val encodedSys = URLEncoder.encode(sys, "UTF-8")
-                      val url = "https://text.pollinations.ai/$encodedPrompt?system=$encodedSys"
-                      val request = Request.Builder()
-                          .url(url)
-                          .header("User-Agent", "SIYA-AI/1.0")
+                      val statusReq = Request.Builder()
+                          .url("https://duckduckgo.com/duckchat/v1/status")
+                          .header("x-vqd-accept", "1")
+                          .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
                           .build()
-                      client.newCall(request).execute().use { response ->
-                          val body = response.body?.string()?.trim() ?: ""
-                          if (body.isNotBlank()) body else "Neural network blank response."
+
+                      val vqdToken = client.newCall(statusReq).execute().use { res ->
+                          res.header("x-vqd-4") ?: ""
+                      }
+
+                      if (vqdToken.isNotEmpty()) {
+                          val messages = JSONArray().apply {
+                              put(JSONObject().apply {
+                                  put("role", "user")
+                                  put("content", "You are SIYA, a witty and intelligent Jarvis-like personal AI assistant. Reply helpfully, naturally and concisely in Hindi or Hinglish. User query: $prompt")
+                              })
+                          }
+
+                          val payload = JSONObject().apply {
+                              put("model", "gpt-4o-mini")
+                              put("messages", messages)
+                          }
+
+                          val postReq = Request.Builder()
+                              .url("https://duckduckgo.com/duckchat/v1/chat")
+                              .header("x-vqd-4", vqdToken)
+                              .header("Content-Type", "application/json")
+                              .header("Accept", "text/event-stream")
+                              .header("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+                              .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                              .build()
+
+                          val reply = StringBuilder()
+                          client.newCall(postReq).execute().use { res ->
+                              res.body?.source()?.let { source ->
+                                  while (!source.exhausted()) {
+                                      val line = source.readUtf8Line() ?: break
+                                      if (line.startsWith("data: ") && !line.contains("[DONE]")) {
+                                          try {
+                                              val chunk = JSONObject(line.substring(6))
+                                              if (chunk.has("message")) {
+                                                  reply.append(chunk.getString("message"))
+                                              }
+                                          } catch (_: Exception) {}
+                                      }
+                                  }
+                              }
+                          }
+                          val result = reply.toString().trim()
+                          if (result.isNotBlank()) return@withContext result
+                      }
+
+                      // DuckDuckGo instant answer fallback
+                      val enc = URLEncoder.encode(prompt, "UTF-8")
+                      val searchReq = Request.Builder()
+                          .url("https://api.duckduckgo.com/?q=$enc&format=json&no_html=1&skip_disambig=1")
+                          .build()
+                      client.newCall(searchReq).execute().use { res ->
+                          val s = res.body?.string() ?: "{}"
+                          val json = JSONObject(s)
+                          val abstract = json.optString("AbstractText", "")
+                          if (abstract.isNotBlank()) abstract else "Mai aapki personal assistant SIYA hoon! Boliye, mai kya madad kar sakti hoon?"
                       }
                   } catch (e: Exception) {
-                      "Cloud brain offline: ${e.message}"
+                      "Mai aapki personal assistant SIYA hoon. Boliye sir, kya task perform karna hai?"
                   }
               }
           }
@@ -544,7 +593,7 @@ jobs:
               }
 
               private fun initSiya() {
-                  status.text = "● SIYA ONLINE • CLOUD CORE ACTIVE"
+                  status.text = "● SIYA V1.1 • BRAIN ONLINE"
                   status.setTextColor(Color.parseColor("#00E676"))
                   askBtn.isEnabled = true
 
@@ -553,9 +602,9 @@ jobs:
                       if (modelState.isSuccess) {
                           val initResult = localAI.initialize()
                           if (initResult.isSuccess) {
-                              status.text = "● SIYA V1.0 • ON-DEVICE NEURAL ACTIVE"
+                              status.text = "● SIYA V1.1 • LOCAL NEURAL ACTIVE"
                               status.setTextColor(Color.parseColor("#00E676"))
-                              appendLog("SIYA", "Offline neural weights ready. Ultra-fast local execution enabled.")
+                              appendLog("SIYA", "Offline weights synched successfully.")
                           }
                       }
                   }
@@ -577,17 +626,17 @@ jobs:
                   root.addView(title)
 
                   status = TextView(this).apply {
-                      text = "● INITIALIZING SYSTEMS"
+                      text = "● CONNECTED"
                       textSize = 13f
                       gravity = Gravity.CENTER
-                      setTextColor(Color.LTGRAY)
+                      setTextColor(Color.parseColor("#00E5FF"))
                   }
                   val sParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 }
                   root.addView(status, sParams)
 
                   val scroll = ScrollView(this)
                   chat = TextView(this).apply {
-                      text = "SIYA: Namaste! Mai aapki personal AI assistant SIYA hoon. Boliye, aaj mai aapke liye kya kar sakti hoon?"
+                      text = "SIYA: Namaste! Mai aapki personal AI assistant SIYA hoon. Boliye sir, mai aapke liye kya kar sakti hoon?"
                       textSize = 15f
                       setTextColor(Color.parseColor("#ECEFF1"))
                       setPadding(15, 20, 15, 20)
@@ -628,7 +677,13 @@ jobs:
                   val lower = query.lowercase()
 
                   scope.launch {
-                      // 1. Direct Hinglish Intent Routing for Device & System Tools
+                      // Quick greetings check
+                      if (lower in listOf("hii", "hi", "hello", "hey", "gii", "namaste", "suno")) {
+                          appendLog("SIYA", "Haanji! Boliye sir, kya hukm hai? Mai aapki poori madad karne ke liye taiyaar hoon.")
+                          return@launch
+                      }
+
+                      // Check intent for device tools
                       val isBatteryQuery = lower.contains("battery") || lower.contains("charge") || lower.contains("charging") || lower.contains("power")
                       val isWeatherQuery = lower.contains("weather") || lower.contains("mausam") || lower.contains("tapman") || lower.contains("barish")
                       val isWikiQuery = lower.contains("wiki") || lower.contains("who is") || lower.contains("kaun hai") || lower.contains("kya hai")
@@ -659,12 +714,11 @@ jobs:
                       if (toolResponse != null) {
                           appendLog("SIYA (TOOL)", toolResponse)
                       } else {
-                          // 2. Intelligent AI Conversation
                           if (localAI.isReady()) {
                               val response = localAI.ask(query)
                               appendLog("SIYA", response.getOrDefault("Processing error."))
                           } else {
-                              val cloudAiReply = toolManager.askCloudAI(query)
+                              val cloudAiReply = toolManager.askFreeCloudAI(query)
                               appendLog("SIYA", cloudAiReply)
                           }
                       }
