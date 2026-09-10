@@ -120,8 +120,8 @@ jobs:
                   applicationId = "com.siya.ai"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 3
-                  versionName = "1.2"
+                  versionCode = 4
+                  versionName = "1.3"
               }
 
               signingConfigs {
@@ -244,14 +244,14 @@ jobs:
                   val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       Notification.Builder(this, channelId)
                           .setContentTitle("SIYA AI • Active")
-                          .setContentText("Listening for background commands & sensor events")
+                          .setContentText("Listening for background commands")
                           .setSmallIcon(android.R.drawable.ic_dialog_info)
                           .build()
                   } else {
                       @Suppress("DEPRECATION")
                       Notification.Builder(this)
                           .setContentTitle("SIYA AI • Active")
-                          .setContentText("Background service running")
+                          .setContentText("Background service active")
                           .setSmallIcon(android.R.drawable.ic_dialog_info)
                           .build()
                   }
@@ -273,9 +273,11 @@ jobs:
           import android.content.IntentFilter
           import android.hardware.camera2.CameraCharacteristics
           import android.hardware.camera2.CameraManager
+          import android.media.AudioManager
           import android.net.Uri
           import android.os.BatteryManager
           import android.provider.MediaStore
+          import android.view.KeyEvent
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.withContext
           import okhttp3.MediaType.Companion.toMediaType
@@ -306,7 +308,7 @@ jobs:
                   val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
                   val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
                   val pct = (level * 100) / scale.toFloat()
-                  val chargeState = if (isCharging) "Charging connect hai" else "Battery par chal raha hai"
+                  val chargeState = if (isCharging) "Charging connect hai ⚡" else "Battery par chal raha hai"
                   return "Aapka phone abhi ${pct.toInt()}% charged hai. $chargeState."
               }
 
@@ -321,9 +323,9 @@ jobs:
                           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                       }
                       context.startActivity(intent)
-                      "Camera khol diya hai sir, photo click kar sakte hain."
+                      "Camera chalu kar diya hai sir, aap photo khinch sakte hain."
                   } catch (e: Exception) {
-                      "Camera open karne me issue aaya: ${e.message}"
+                      "Camera open karne me dikkat aayi: ${e.message}"
                   }
               }
 
@@ -333,13 +335,26 @@ jobs:
                       val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
                           val chars = cameraManager.getCameraCharacteristics(id)
                           chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                      } ?: return "Is device me flashlight detect nahi hui."
+                      } ?: return "Is device me flashlight nahi mili."
 
                       cameraManager.setTorchMode(cameraId, turnOn)
                       isFlashOn = turnOn
-                      if (turnOn) "Flashlight on kar di hai." else "Flashlight off kar di hai."
+                      if (turnOn) "Flashlight on kar di gayi hai." else "Flashlight off kar di gayi hai."
                   } catch (e: Exception) {
-                      "Torch command error: ${e.message}"
+                      "Torch activate nahi ho saki: ${e.message}"
+                  }
+              }
+
+              fun stopMusic(): String {
+                  return try {
+                      val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                      val eventDown = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE)
+                      val eventUp = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE)
+                      audioManager.dispatchMediaKeyEvent(eventDown)
+                      audioManager.dispatchMediaKeyEvent(eventUp)
+                      "Spotify aur media song pause kar diya hai sir."
+                  } catch (e: Exception) {
+                      "Music pause karne me error: ${e.message}"
                   }
               }
 
@@ -350,6 +365,7 @@ jobs:
                       "youtube" -> "com.google.android.youtube"
                       "chrome" -> "com.android.chrome"
                       "settings" -> "com.android.settings"
+                      "spotify" -> "com.spotify.music"
                       else -> null
                   }
 
@@ -359,18 +375,18 @@ jobs:
                           if (intent != null) {
                               intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                               context.startActivity(intent)
-                              "$appName launch kar diya hai."
+                              "$appName open kar diya hai sir."
                           } else {
-                              "$appName phone me installed nahi mila."
+                              "$appName aapke phone me install nahi mila."
                           }
                       } else {
                           val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(appName, "UTF-8")}"))
                           intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                           context.startActivity(intent)
-                          "Web search par le chal rahi hoon."
+                          "Web par dhoondh rahi hoon."
                       }
                   } catch (e: Exception) {
-                      "App open error: ${e.message}"
+                      "App open karne me dikkat aayi: ${e.message}"
                   }
               }
 
@@ -387,7 +403,7 @@ jobs:
                           if (text.isNotBlank() && !text.contains("<html")) {
                               "Mausam report ($cleanCity): $text"
                           } else {
-                              "Mausam jankari fetch nahi ho saki."
+                              "Mausam ki jankari abhi fetch nahi ho saki."
                           }
                       }
                   } catch (e: Exception) {
@@ -411,7 +427,7 @@ jobs:
                           val messages = JSONArray().apply {
                               put(JSONObject().apply {
                                   put("role", "user")
-                                  put("content", "You are SIYA, a witty and sharp Jarvis-like personal AI assistant. Reply helpfully, naturally and concisely in Hindi or Hinglish. Always answer the question directly. User query: $prompt")
+                                  put("content", "You are SIYA, a witty and smart Jarvis-style personal AI assistant. Reply in concise, direct Hindi/Hinglish to the point. Prompt: $prompt")
                               })
                           }
 
@@ -457,10 +473,10 @@ jobs:
                           val s = res.body?.string() ?: "{}"
                           val json = JSONObject(s)
                           val abstract = json.optString("AbstractText", "")
-                          if (abstract.isNotBlank()) abstract else "Mai SIYA hoon sir. Mai aapke device ke apps (Camera, Torch, YouTube), battery status, mausam, aur sawalon ke jawab de sakti hoon."
+                          if (abstract.isNotBlank()) abstract else "Haanji sir, mai aapki command execute karne ke liye ready hoon."
                       }
                   } catch (e: Exception) {
-                      "Mai SIYA hoon sir. Boliye, aapke device me kya action perform karna hai?"
+                      "Sir, mai connect ho rahi hoon. Kripya dobara bolein."
                   }
               }
           }
@@ -566,7 +582,7 @@ jobs:
                                   status.setTextColor(Color.parseColor("#00E5FF"))
                               }
                               override fun onError(error: Int) {
-                                  status.text = "● SIYA V1.2 • BRAIN ONLINE"
+                                  status.text = "● SIYA V1.3 • ONLINE"
                                   status.setTextColor(Color.parseColor("#00E676"))
                               }
                               override fun onResults(results: Bundle?) {
@@ -576,7 +592,7 @@ jobs:
                                       input.setText(spokenText)
                                       executeSiyaCommand(spokenText)
                                   }
-                                  status.text = "● SIYA V1.2 • BRAIN ONLINE"
+                                  status.text = "● SIYA V1.3 • ONLINE"
                                   status.setTextColor(Color.parseColor("#00E676"))
                               }
                               override fun onPartialResults(partialResults: Bundle?) {}
@@ -611,7 +627,7 @@ jobs:
                   root.addView(title)
 
                   status = TextView(this).apply {
-                      text = "● SIYA V1.2 • BRAIN & VOICE ACTIVE"
+                      text = "● SIYA V1.3 • BRAIN & ACTIONS READY"
                       textSize = 13f
                       gravity = Gravity.CENTER
                       setTextColor(Color.parseColor("#00E676"))
@@ -679,37 +695,52 @@ jobs:
                   input.text.clear()
                   hideKeyboard()
 
-                  val lower = query.lowercase()
+                  val lower = query.lowercase().trim()
 
                   scope.launch {
-                      val isBattery = lower.contains("battery") || lower.contains("charge") || lower.contains("power")
-                      val isTime = lower.contains("time") || lower.contains("samay") || lower.contains("tarikh") || lower.contains("date")
-                      val isCamera = lower.contains("camera") || lower.contains("photo")
-                      val isTorchOn = (lower.contains("torch") || lower.contains("flash")) && (lower.contains("on") || lower.contains("chalu") || lower.contains("jalao"))
-                      val isTorchOff = (lower.contains("torch") || lower.contains("flash")) && (lower.contains("off") || lower.contains("band"))
-                      val isWhatsApp = lower.contains("whatsapp")
-                      val isYouTube = lower.contains("youtube")
-                      val isSettings = lower.contains("setting")
-                      val isWeather = lower.contains("weather") || lower.contains("mausam")
+                      // Multilingual Intents (Both English & Devanagari Hindi support)
+                      val isBattery = lower.contains("battery") || lower.contains("charge") || lower.contains("power") ||
+                                      lower.contains("बैटरी") || lower.contains("चार्ज")
+
+                      val isCamera = lower.contains("camera") || lower.contains("photo") ||
+                                     lower.contains("कैमरा") || lower.contains("फोटो")
+
+                      val isTorchOn = ((lower.contains("torch") || lower.contains("flash") || lower.contains("टॉर्च") || lower.contains("फ्लैश")) &&
+                                      (lower.contains("on") || lower.contains("chalu") || lower.contains("jalao") || lower.contains("ऑन") || lower.contains("चालू") || lower.contains("जलाओ")))
+
+                      val isTorchOff = ((lower.contains("torch") || lower.contains("flash") || lower.contains("टॉर्च") || lower.contains("फ्लैश")) &&
+                                       (lower.contains("off") || lower.contains("band") || lower.contains("ऑफ") || lower.contains("बंद")))
+
+                      val isMusicStop = lower.contains("spotify") || lower.contains("song") || lower.contains("gana") ||
+                                        lower.contains("म्यूजिक") || lower.contains("गाना") || lower.contains("सॉन्ग") || lower.contains("स्पॉटिफाई")
+
+                      val isTime = lower.contains("time") || lower.contains("samay") || lower.contains("tarikh") || lower.contains("date") ||
+                                   lower.contains("टाइम") || lower.contains("समय") || lower.contains("तारीख")
+
+                      val isWhatsApp = lower.contains("whatsapp") || lower.contains("व्हाट्सएप")
+                      val isYouTube = lower.contains("youtube") || lower.contains("यूट्यूब")
+                      val isSettings = lower.contains("setting") || lower.contains("सेटिंग")
+                      val isWeather = lower.contains("weather") || lower.contains("mausam") || lower.contains("मौसम")
 
                       val replyText: String = when {
-                          isBattery -> toolManager.getBatteryStatus()
-                          isTime -> toolManager.getTimeDate()
                           isCamera -> toolManager.openCamera()
+                          isMusicStop && (lower.contains("band") || lower.contains("stop") || lower.contains("pause") || lower.contains("रोक") || lower.contains("बंद")) -> toolManager.stopMusic()
+                          isBattery -> toolManager.getBatteryStatus()
                           isTorchOn -> toolManager.toggleTorch(true)
                           isTorchOff -> toolManager.toggleTorch(false)
+                          isTime -> toolManager.getTimeDate()
                           isWhatsApp -> toolManager.openInstalledApp("whatsapp")
                           isYouTube -> toolManager.openInstalledApp("youtube")
                           isSettings -> toolManager.openInstalledApp("settings")
                           isWeather -> {
-                              val city = query.replace("weather", "", true).replace("mausam", "", true).trim()
+                              val city = query.replace("weather", "", true)
+                                  .replace("mausam", "", true)
+                                  .replace("मौसम", "", true)
+                                  .trim()
                               toolManager.fetchWeather(city)
                           }
-                          lower in listOf("hii", "hi", "hello", "hey", "gii", "namaste") -> {
+                          lower in listOf("hii", "hi", "hello", "hey", "नमस्ते", "हाय", "हेलो") -> {
                               "Haanji sir! Boliye, mai aapke liye kya kar sakti hoon?"
-                          }
-                          lower.contains("kya kar sakti ho") || lower.contains("kya kya open") -> {
-                              "Sir mai camera khol sakti hoon, torch on/off kar sakti hoon, WhatsApp/YouTube open kar sakti hoon, battery aur samay bata sakti hoon, aur aapke sawalon ke jawab de sakti hoon."
                           }
                           else -> toolManager.askIntelligentBrain(query)
                       }
