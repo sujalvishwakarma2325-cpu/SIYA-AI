@@ -59,8 +59,8 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add keystore/siya.jks
             git commit -m "Add permanent fixed keystore for seamless updates"
-            git pull --rebase origin main
-            git push origin main
+            git pull --rebase origin main || true
+            git push origin main || true
           fi
           echo "SIYA_KEYSTORE_PATH=$GITHUB_WORKSPACE/keystore/siya.jks" >> "$GITHUB_ENV"
           echo "SIYA_KEYSTORE_PASSWORD=SiyaRelease123" >> "$GITHUB_ENV"
@@ -96,7 +96,7 @@ jobs:
           cat > SIYA/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application") version "8.7.3" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.0" apply false
+              id("org.jetbrains.kotlin.android") version "2.3.0" apply false
           }
           EOF
 
@@ -126,7 +126,7 @@ jobs:
 
               signingConfigs {
                   create("release") {
-                      val keystorePath = System.getenv("SIYA_KEYSTORE_PATH") ?: error("Keystore missing")
+                      val keystorePath = System.getenv("SIYA_KEYSTORE_PATH") ?: "$rootDir/../keystore/siya.jks"
                       storeFile = file(keystorePath)
                       storePassword = System.getenv("SIYA_KEYSTORE_PASSWORD") ?: "SiyaRelease123"
                       keyAlias = "siya"
@@ -147,6 +147,13 @@ jobs:
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          kotlin {
+              compilerOptions {
+                  jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+                  freeCompilerArgs.add("-Xskip-metadata-version-check")
               }
           }
 
