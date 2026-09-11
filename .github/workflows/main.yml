@@ -120,8 +120,8 @@ jobs:
                   applicationId = "com.siya.ai"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 7
-                  versionName = "1.6"
+                  versionCode = 8
+                  versionName = "2.0"
               }
 
               signingConfigs {
@@ -242,6 +242,7 @@ jobs:
           import kotlinx.coroutines.withContext
           import okhttp3.OkHttpClient
           import okhttp3.Request
+          import org.json.JSONArray
           import org.json.JSONObject
           import java.net.URLEncoder
           import java.text.SimpleDateFormat
@@ -251,70 +252,66 @@ jobs:
 
           class ToolManager(private val context: Context) {
               private val client = OkHttpClient.Builder()
-                  .connectTimeout(15, TimeUnit.SECONDS)
-                  .readTimeout(25, TimeUnit.SECONDS)
+                  .connectTimeout(12, TimeUnit.SECONDS)
+                  .readTimeout(18, TimeUnit.SECONDS)
                   .build()
 
+              private var isFlashOn = false
+
+              // TOOL 1: Battery Engine
               fun getBatteryStatus(): String {
                   val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                  val batteryStatus = context.registerReceiver(null, ifilter)
-                  val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                  val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                  val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                  val b = context.registerReceiver(null, ifilter)
+                  val level = b?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                  val scale = b?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                  val status = b?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
                   val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
                   val pct = (level * 100) / scale.toFloat()
-                  val chargeState = if (isCharging) "Charging connect hai" else "Battery par chal raha hai"
-                  return "Aapka phone ${pct.toInt()}% charged hai. $chargeState."
+                  return "Aapka phone ${pct.toInt()}% charged hai. ${if (isCharging) "Charging connect hai ⚡" else "Battery par chal raha hai."}"
               }
 
+              // TOOL 2: Time & Date Engine
               fun getTimeDate(): String {
-                  val sdf = SimpleDateFormat("hh:mm a, dd MMMM", Locale.getDefault())
+                  val sdf = SimpleDateFormat("hh:mm a, EEEE, dd MMMM yyyy", Locale.getDefault())
                   return "Abhi samay hai: ${sdf.format(Date())}."
               }
 
+              // TOOL 3: Camera Launcher
               fun openCamera(): String {
                   return try {
-                      val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                      }
+                      val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                       context.startActivity(intent)
                       "Camera chalu kar diya hai sir."
-                  } catch (e: Exception) {
-                      "Camera open nahi ho saka: ${e.message}"
-                  }
+                  } catch (e: Exception) { "Camera error: ${e.message}" }
               }
 
+              // TOOL 4: Flashlight Controller
               fun toggleTorch(turnOn: Boolean): String {
                   return try {
-                      val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                      val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
-                          val chars = cameraManager.getCameraCharacteristics(id)
-                          chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                      } ?: return "Torch available nahi hai."
-
-                      cameraManager.setTorchMode(cameraId, turnOn)
-                      if (turnOn) "Flashlight on kar di gayi hai." else "Flashlight off kar di gayi hai."
-                  } catch (e: Exception) {
-                      "Torch error: ${e.message}"
-                  }
+                      val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                      val id = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
+                          ?: return "Torch hardware nahi mila."
+                      cm.setTorchMode(id, turnOn)
+                      isFlashOn = turnOn
+                      if (turnOn) "Flashlight on kar di hai." else "Flashlight off kar di hai."
+                  } catch (e: Exception) { "Torch error: ${e.message}" }
               }
 
+              // TOOL 5: Universal Media Control
               fun controlMedia(play: Boolean): String {
                   return try {
-                      val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                      val keyCode = if (play) KeyEvent.KEYCODE_MEDIA_PLAY else KeyEvent.KEYCODE_MEDIA_PAUSE
-                      audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-                      audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+                      val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                      val code = if (play) KeyEvent.KEYCODE_MEDIA_PLAY else KeyEvent.KEYCODE_MEDIA_PAUSE
+                      am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+                      am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
                       if (play) "Song play kar diya hai sir." else "Song pause kar diya hai sir."
-                  } catch (e: Exception) {
-                      "Media error: ${e.message}"
-                  }
+                  } catch (e: Exception) { "Media control error: ${e.message}" }
               }
 
+              // TOOL 6: Instagram Direct Launcher
               fun openInstagram(): String {
                   val pm = context.packageManager
-                  val candidates = listOf("com.instagram.android", "com.instagram.lite")
-                  for (pkg in candidates) {
+                  for (pkg in listOf("com.instagram.android", "com.instagram.lite")) {
                       val intent = pm.getLaunchIntentForPackage(pkg)
                       if (intent != null) {
                           intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -328,20 +325,19 @@ jobs:
                           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                       }
                       context.startActivity(uriIntent)
-                      "Instagram open kar diya hai."
+                      "Instagram open ho gaya hai."
                   } catch (_: Exception) {
-                      val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.instagram.com")).apply {
-                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                      }
+                      val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.instagram.com")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                       context.startActivity(webIntent)
-                      "Instagram web par khol diya hai."
+                      "Instagram web khol diya hai."
                   }
               }
 
-              fun openInstalledApp(appName: String): String {
-                  if (appName.lowercase() == "instagram") return openInstagram()
+              // TOOL 7: App Router (YouTube, WhatsApp, Spotify, Settings)
+              fun openApp(name: String): String {
+                  if (name.lowercase() == "instagram") return openInstagram()
                   val pm = context.packageManager
-                  val candidates = when (appName.lowercase()) {
+                  val list = when (name.lowercase()) {
                       "whatsapp" -> listOf("com.whatsapp", "com.whatsapp.w4b")
                       "youtube" -> listOf("com.google.android.youtube")
                       "spotify" -> listOf("com.spotify.music", "com.spotify.lite")
@@ -349,142 +345,279 @@ jobs:
                       "settings" -> listOf("com.android.settings")
                       else -> emptyList()
                   }
-
-                  for (pkg in candidates) {
+                  for (pkg in list) {
                       val intent = pm.getLaunchIntentForPackage(pkg)
                       if (intent != null) {
                           intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                           context.startActivity(intent)
-                          return "$appName open kar diya hai sir."
+                          return "$name open kar diya hai sir."
                       }
                   }
-
-                  return try {
-                      val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(appName, "UTF-8")}"))
-                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                      context.startActivity(intent)
-                      "$appName dhoondh rahi hoon."
-                  } catch (e: Exception) {
-                      "App error: ${e.message}"
-                  }
+                  return searchGoogle(name)
               }
 
-              fun searchGoogle(query: String): String {
+              // TOOL 8: Google Search Redirect
+              fun searchGoogle(q: String): String {
                   return try {
-                      val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(query, "UTF-8")}"))
-                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(q, "UTF-8")}")).apply {
+                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      }
                       context.startActivity(intent)
-                      "Google par '$query' search kar diya hai."
-                  } catch (e: Exception) {
-                      "Search error: ${e.message}"
-                  }
+                      "Google par '$q' search kar diya hai."
+                  } catch (e: Exception) { "Search issue: ${e.message}" }
               }
 
+              // TOOL 9: wttr.in Live Weather API
               suspend fun fetchWeather(city: String): String = withContext(Dispatchers.IO) {
                   try {
-                      val cleanCity = if (city.isBlank()) "Bhopal" else city.trim()
-                      val url = "https://wttr.in/${URLEncoder.encode(cleanCity, "UTF-8")}?format=%C:+%t+(Humidity:+%h)"
-                      val request = Request.Builder().url(url).header("User-Agent", "curl/7.68.0").build()
-                      client.newCall(request).execute().use { response ->
-                          val text = response.body?.string()?.trim() ?: ""
-                          if (text.isNotBlank() && !text.contains("<html")) "Mausam ($cleanCity): $text" else "Mausam nahi mila."
+                      val clean = if (city.isBlank()) "Bhopal" else city.trim()
+                      val url = "https://wttr.in/${URLEncoder.encode(clean, "UTF-8")}?format=%C:+%t+(Humidity:+%h)"
+                      val req = Request.Builder().url(url).header("User-Agent", "curl/7.68.0").build()
+                      client.newCall(req).execute().use { res ->
+                          val body = res.body?.string()?.trim() ?: ""
+                          if (body.isNotBlank() && !body.contains("<html")) "Mausam ($clean): $body" else "Mausam jankari nahi mili."
                       }
-                  } catch (e: Exception) {
-                      "Weather error: ${e.message}"
-                  }
+                  } catch (e: Exception) { "Weather error: ${e.message}" }
               }
 
-              suspend fun askDirectIntelligence(prompt: String): String = withContext(Dispatchers.IO) {
+              // TOOL 10: Hindi Wikipedia Knowledge API
+              suspend fun fetchHindiWiki(query: String): String? = withContext(Dispatchers.IO) {
                   try {
-                      val enc = URLEncoder.encode(prompt.trim(), "UTF-8")
-                      val wikiUrl = "https://hi.wikipedia.org/api/rest_v1/page/summary/$enc"
-                      val req = Request.Builder().url(wikiUrl).build()
+                      val enc = URLEncoder.encode(query.trim(), "UTF-8")
+                      val url = "https://hi.wikipedia.org/api/rest_v1/page/summary/$enc"
+                      val req = Request.Builder().url(url).build()
                       client.newCall(req).execute().use { res ->
                           val json = JSONObject(res.body?.string() ?: "{}")
-                          if (json.has("extract")) {
-                              val ext = json.getString("extract")
-                              if (ext.isNotBlank()) return@withContext ext
-                          }
+                          if (json.has("extract")) json.getString("extract").ifBlank { null } else null
                       }
-                  } catch (_: Exception) {}
-
-                  try {
-                      val enc = URLEncoder.encode(prompt.trim(), "UTF-8")
-                      val wikiUrl = "https://en.wikipedia.org/api/rest_v1/page/summary/$enc"
-                      val req = Request.Builder().url(wikiUrl).build()
-                      client.newCall(req).execute().use { res ->
-                          val json = JSONObject(res.body?.string() ?: "{}")
-                          if (json.has("extract")) {
-                              val ext = json.getString("extract")
-                              if (ext.isNotBlank()) return@withContext ext
-                          }
-                      }
-                  } catch (_: Exception) {}
-
-                  "Sir mai SIYA hoon! Mai Instagram, WhatsApp, YouTube chala sakti hoon, camera aur torch operate kar sakti hoon, aur kisi bhi sawal ka jawab search kar sakti hoon."
+                  } catch (_: Exception) { null }
               }
 
+              // TOOL 11: English Wikipedia Knowledge API
+              suspend fun fetchEnglishWiki(query: String): String? = withContext(Dispatchers.IO) {
+                  try {
+                      val enc = URLEncoder.encode(query.trim(), "UTF-8")
+                      val url = "https://en.wikipedia.org/api/rest_v1/page/summary/$enc"
+                      val req = Request.Builder().url(url).build()
+                      client.newCall(req).execute().use { res ->
+                          val json = JSONObject(res.body?.string() ?: "{}")
+                          if (json.has("extract")) json.getString("extract").ifBlank { null } else null
+                      }
+                  } catch (_: Exception) { null }
+              }
+
+              // TOOL 12: Open Exchange Rates Currency API
+              suspend fun convertCurrency(amount: Double, from: String, to: String): String = withContext(Dispatchers.IO) {
+                  try {
+                      val url = "https://open.er-api.com/v6/latest/$from"
+                      val req = Request.Builder().url(url).build()
+                      client.newCall(req).execute().use { res ->
+                          val json = JSONObject(res.body?.string() ?: "{}")
+                          val rates = json.getJSONObject("rates")
+                          val target = rates.getDouble(to.uppercase())
+                          val result = amount * target
+                          "$amount $from = ${"%.2f".format(result)} $to"
+                      }
+                  } catch (e: Exception) { "Currency conversion error: ${e.message}" }
+              }
+
+              // TOOL 13: DuckDuckGo Instant Answer API
+              suspend fun duckInstantAnswer(query: String): String? = withContext(Dispatchers.IO) {
+                  try {
+                      val enc = URLEncoder.encode(query, "UTF-8")
+                      val url = "https://api.duckduckgo.com/?q=$enc&format=json&no_html=1&skip_disambig=1"
+                      val req = Request.Builder().url(url).build()
+                      client.newCall(req).execute().use { res ->
+                          val json = JSONObject(res.body?.string() ?: "{}")
+                          val abstract = json.optString("AbstractText", "")
+                          if (abstract.isNotBlank()) abstract else null
+                      }
+                  } catch (_: Exception) { null }
+              }
+
+              // TOOL 14: DuckDuckGo Web Snippet Scraper API
+              suspend fun duckWebSnippet(query: String): String? = withContext(Dispatchers.IO) {
+                  try {
+                      val enc = URLEncoder.encode(query, "UTF-8")
+                      val url = "https://html.duckduckgo.com/html/?q=$enc"
+                      val req = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                      client.newCall(req).execute().use { res ->
+                          val html = res.body?.string() ?: ""
+                          val match = Regex("""class="result__snippet"[^>]*>(.*?)</a>""").find(html)
+                          match?.groupValues?.get(1)?.replace(Regex("<.*?>"), "")?.trim()?.ifBlank { null }
+                      }
+                  } catch (_: Exception) { null }
+              }
+
+              // TOOL 15: Math Calculator Evaluator
+              fun evaluateMath(expr: String): String? {
+                  return try {
+                      val clean = expr.replace("x", "*").replace("X", "*").filter { it.isDigit() || "+-*/.".contains(it) }
+                      if (clean.length < 3) return null
+                      val parts = clean.split(Regex("(?<=[-+*/])|(?=[-+*/])")).filter { it.isNotBlank() }
+                      if (parts.size >= 3) {
+                          val n1 = parts[0].toDouble()
+                          val op = parts[1]
+                          val n2 = parts[2].toDouble()
+                          val res = when (op) {
+                              "+" -> n1 + n2
+                              "-" -> n1 - n2
+                              "*" -> n1 * n2
+                              "/" -> if (n2 != 0.0) n1 / n2 else "Infinite"
+                              else -> null
+                          }
+                          if (res != null) "Hisab ka jawab: $clean = $res" else null
+                      } else null
+                  } catch (_: Exception) { null }
+              }
+
+              // TOOL 16: Official Joke API
+              suspend fun fetchOfficialJoke(): String = withContext(Dispatchers.IO) {
+                  try {
+                      val req = Request.Builder().url("https://official-joke-api.appspot.com/random_joke").build()
+                      client.newCall(req).execute().use { res ->
+                          val json = JSONObject(res.body?.string() ?: "{}")
+                          "${json.getString("setup")} - ${json.getString("punchline")}"
+                      }
+                  } catch (_: Exception) { "Ek aadmi doctor ke paas gaya aur bola: Doctor sahab, sab log mujhe ignore karte hain! Doctor: Next please!" }
+              }
+
+              // TOOL 17: Hindi Joke Engine
+              fun getHindiJoke(): String {
+                  val jokes = listOf(
+                      "Pappu exam me blank paper chhod kar aa gaya. Teacher: Kuch likha kyu nahi? Pappu: Khamoshi ko alfaaz ki zarurat nahi hoti!",
+                      "Master ji: Batao aalashya kya hai? Student: Sab pata hone ke baad bhi jawab na dena!",
+                      "Santa: Yaar kal raat sapne me ek ladki ne mujhe propose kiya. Banta: Fir tune kya bola? Santa: Maine bol diya ki mai padhai par focus kar raha hoon!"
+                  )
+                  return jokes.random()
+              }
+
+              // TOOL 18: ZenQuotes Daily Motivational API
+              suspend fun fetchMotivationalQuote(): String = withContext(Dispatchers.IO) {
+                  try {
+                      val req = Request.Builder().url("https://zenquotes.io/api/random").build()
+                      client.newCall(req).execute().use { res ->
+                          val arr = JSONArray(res.body?.string() ?: "[]")
+                          if (arr.length() > 0) {
+                              val obj = arr.getJSONObject(0)
+                              "\"${obj.getString("q")}\" — ${obj.getString("a")}"
+                          } else "Koshish karne walon ki kabhi haar nahi hoti!"
+                      }
+                  } catch (_: Exception) { "Mehnat itni khamoshi se karo ki safalta shor macha de." }
+              }
+
+              // TOOL 19: Advice Slip Life Wisdom API
+              suspend fun fetchAdvice(): String = withContext(Dispatchers.IO) {
+                  try {
+                      val req = Request.Builder().url("https://api.adviceslip.com/advice").build()
+                      client.newCall(req).execute().use { res ->
+                          val json = JSONObject(res.body?.string() ?: "{}")
+                          val slip = json.getJSONObject("slip")
+                          "SIYA Advice: ${slip.getString("advice")}"
+                      }
+                  } catch (_: Exception) { "Hamesha positively socho aur apne lakshya par focus rakho!" }
+              }
+
+              // TOOL 20: IP Geolocation City & ISP API
+              suspend fun fetchIPDetails(): String = withContext(Dispatchers.IO) {
+                  try {
+                      val req = Request.Builder().url("http://ip-api.com/json").build()
+                      client.newCall(req).execute().use { res ->
+                          val json = JSONObject(res.body?.string() ?: "{}")
+                          "Network Location: ${json.optString("city", "Unknown")}, ${json.optString("regionName", "")}, Provider: ${json.optString("isp", "Cellular")}"
+                      }
+                  } catch (e: Exception) { "Network location fetch error: ${e.message}" }
+              }
+
+              // High-level Router coordinating all 20 AI engines
               suspend fun processQuery(query: String): String {
                   val lower = query.lowercase().trim()
 
-                  val isCapabilities = lower.contains("kya kya") || lower.contains("kya kar sakti") ||
-                                       lower.contains("क्या-क्या") || lower.contains("क्या कर सकती") ||
-                                       lower.contains("what you do") || lower.contains("व्हाट यू डू")
+                  // Math calculation
+                  val mathRes = evaluateMath(lower)
+                  if (mathRes != null) return mathRes
 
-                  val isCamera = lower.contains("camera") || lower.contains("photo") ||
-                                 lower.contains("कैमरा") || lower.contains("फोटो")
-
-                  val isInstagram = lower.contains("instagram") || lower.contains("insta") || lower.contains("इंस्टाग्राम")
-                  val isYouTube = lower.contains("youtube") || lower.contains("यूट्यूब")
-                  val isWhatsApp = lower.contains("whatsapp") || lower.contains("व्हाट्सएप")
-                  val isSpotify = lower.contains("spotify") || lower.contains("स्पॉटिफाई")
-
-                  val isMediaPlay = (lower.contains("gana") || lower.contains("song") || lower.contains("गाना") || lower.contains("सान्ग")) &&
-                                    (lower.contains("play") || lower.contains("chalao") || lower.contains("चलाओ") || lower.contains("ऑन"))
-
-                  val isMediaStop = (lower.contains("gana") || lower.contains("song") || lower.contains("गाना")) &&
-                                    (lower.contains("stop") || lower.contains("pause") || lower.contains("band") || lower.contains("बंद"))
-
-                  val isTorchOn = ((lower.contains("torch") || lower.contains("flash") || lower.contains("टॉर्च")) &&
-                                  (lower.contains("on") || lower.contains("chalu") || lower.contains("jalao") || lower.contains("ऑन") || lower.contains("चालू")))
-
-                  val isTorchOff = ((lower.contains("torch") || lower.contains("flash") || lower.contains("टॉर्च")) &&
-                                   (lower.contains("off") || lower.contains("band") || lower.contains("ऑफ") || lower.contains("बंद")))
-
-                  val isBattery = lower.contains("battery") || lower.contains("charge") || lower.contains("power") ||
-                                  lower.contains("बैटरी") || lower.contains("चार्ज")
-
-                  val isTime = lower.contains("time") || lower.contains("samay") || lower.contains("tarikh") ||
-                               lower.contains("टाइम") || lower.contains("समय")
-
-                  val isSearch = lower.contains("search") || lower.contains("खोजो") || lower.contains("सर्च")
-
-                  return when {
-                      isCapabilities -> "Sir mai SIYA hoon! Mai Instagram, WhatsApp, YouTube khol sakti hoon, Camera aur Torch control kar sakti hoon, battery aur time bata sakti hoon."
-                      isInstagram -> openInstagram()
-                      isCamera -> openCamera()
-                      isYouTube -> openInstalledApp("youtube")
-                      isWhatsApp -> openInstalledApp("whatsapp")
-                      isSpotify -> openInstalledApp("spotify")
-                      isMediaPlay -> controlMedia(true)
-                      isMediaStop -> controlMedia(false)
-                      isTorchOn -> toggleTorch(true)
-                      isTorchOff -> toggleTorch(false)
-                      isBattery -> getBatteryStatus()
-                      isTime -> getTimeDate()
-                      isSearch -> {
-                          val cleanQuery = query.replace("search", "", true)
-                              .replace("सर्च", "", true)
-                              .replace("ओपन", "", true)
-                              .replace("खोजो", "", true)
-                              .trim()
-                          searchGoogle(cleanQuery)
-                      }
-                      lower in listOf("hii", "hi", "hello", "hey", "नमस्ते", "हाय", "हेलो", "हेलो सिया") -> {
-                          "Haanji sir! Boliye, mai aapke liye kya kar sakti hoon?"
-                      }
-                      else -> askDirectIntelligence(query)
+                  // Jokes & Motivation
+                  if (lower.contains("joke") || lower.contains("chutkula") || lower.contains("चुटकुला") || lower.contains("मजाक")) {
+                      return if (lower.contains("hindi") || lower.contains("हिंदी")) getHindiJoke() else fetchOfficialJoke()
                   }
+                  if (lower.contains("quote") || lower.contains("motivation") || lower.contains("shiksha") || lower.contains("प्रेरणा")) {
+                      return fetchMotivationalQuote()
+                  }
+                  if (lower.contains("advice") || lower.contains("salah") || lower.contains("सलाह")) {
+                      return fetchAdvice()
+                  }
+                  if (lower.contains("location") || lower.contains("network") || lower.contains("ip") || lower.contains("लोकेशन")) {
+                      return fetchIPDetails()
+                  }
+
+                  // Hardware & Apps
+                  if (lower.contains("camera") || lower.contains("photo") || lower.contains("कैमरा")) return openCamera()
+                  if (lower.contains("instagram") || lower.contains("insta") || lower.contains("इंस्टाग्राम")) return openInstagram()
+                  if (lower.contains("whatsapp") || lower.contains("व्हाट्सएप")) return openApp("whatsapp")
+                  if (lower.contains("youtube") || lower.contains("यूट्यूब")) return openApp("youtube")
+                  if (lower.contains("spotify") || lower.contains("स्पॉटिफाई")) return openApp("spotify")
+
+                  if ((lower.contains("gana") || lower.contains("song") || lower.contains("गाना")) &&
+                      (lower.contains("play") || lower.contains("chalao") || lower.contains("चलाओ") || lower.contains("ऑन"))) {
+                      return controlMedia(true)
+                  }
+                  if ((lower.contains("gana") || lower.contains("song") || lower.contains("गाना")) &&
+                      (lower.contains("stop") || lower.contains("pause") || lower.contains("band") || lower.contains("बंद"))) {
+                      return controlMedia(false)
+                  }
+
+                  if ((lower.contains("torch") || lower.contains("flash") || lower.contains("टॉर्च")) &&
+                      (lower.contains("on") || lower.contains("chalu") || lower.contains("jalao") || lower.contains("ऑन") || lower.contains("चालू"))) {
+                      return toggleTorch(true)
+                  }
+                  if ((lower.contains("torch") || lower.contains("flash") || lower.contains("टॉर्च")) &&
+                      (lower.contains("off") || lower.contains("band") || lower.contains("ऑफ") || lower.contains("बंद"))) {
+                      return toggleTorch(false)
+                  }
+
+                  if (lower.contains("battery") || lower.contains("charge") || lower.contains("बैटरी") || lower.contains("चार्ज")) {
+                      return getBatteryStatus()
+                  }
+                  if (lower.contains("time") || lower.contains("samay") || lower.contains("tarikh") || lower.contains("टाइम") || lower.contains("समय")) {
+                      return getTimeDate()
+                  }
+                  if (lower.contains("weather") || lower.contains("mausam") || lower.contains("मौसम")) {
+                      val city = query.replace("weather", "", true).replace("mausam", "", true).replace("मौसम", "", true).trim()
+                      return fetchWeather(city)
+                  }
+
+                  if (lower.contains("convert") || lower.contains("dollar") || lower.contains("डॉलर")) {
+                      return convertCurrency(1.0, "USD", "INR")
+                  }
+
+                  if (lower.contains("search") || lower.contains("खोजो") || lower.contains("सर्च")) {
+                      val cleanQuery = query.replace("search", "", true).replace("सर्च", "", true).replace("खोजो", "", true).trim()
+                      return searchGoogle(cleanQuery)
+                  }
+
+                  if (lower.contains("kya kya") || lower.contains("kya kar sakti") || lower.contains("features") || lower.contains("क्या-क्या")) {
+                      return "Sir mai SIYA hoon! Mere andar 20 AI tools integrate hain: Camera, Instagram, WhatsApp, YouTube, Spotify, Torch, Live Weather, Hindi/English Wikipedia, Currency Converter, Live Location, Math Solver, Jokes, Quotes aur Intelligent Search."
+                  }
+
+                  if (lower in listOf("hii", "hi", "hello", "hey", "नमस्ते", "हाय", "हेलो", "हेलो सिया")) {
+                      return "Haanji sir! Boliye, mai aapke 20 AI tools ke sath taiyaar hoon. Kya help chahiye?"
+                  }
+
+                  // Fallback: Multi-tier Knowledge Search
+                  val duckInstant = duckInstantAnswer(query)
+                  if (duckInstant != null) return duckInstant
+
+                  val hindiWiki = fetchHindiWiki(query)
+                  if (hindiWiki != null) return hindiWiki
+
+                  val engWiki = fetchEnglishWiki(query)
+                  if (engWiki != null) return engWiki
+
+                  val duckSnippet = duckWebSnippet(query)
+                  if (duckSnippet != null) return duckSnippet
+
+                  return "Aapke sawal '$query' ko analyse kar liya hai sir. Kya ise Google par vistaar se search karein?"
               }
           }
           EOF
@@ -547,7 +680,7 @@ jobs:
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val channel = NotificationChannel(
                           channelId,
-                          "SIYA Active Background",
+                          "SIYA 20-AI Engine",
                           NotificationManager.IMPORTANCE_LOW
                       )
                       val manager = getSystemService(NotificationManager::class.java)
@@ -567,8 +700,8 @@ jobs:
 
                   val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       Notification.Builder(this, channelId)
-                          .setContentTitle("SIYA AI • Listening")
-                          .setContentText("Tap to speak command or just speak out")
+                          .setContentTitle("SIYA AI • 20 Tools Active")
+                          .setContentText("Tap to command or speak anytime")
                           .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                           .setContentIntent(pendingIntent)
                           .setOngoing(true)
@@ -576,8 +709,8 @@ jobs:
                   } else {
                       @Suppress("DEPRECATION")
                       Notification.Builder(this)
-                          .setContentTitle("SIYA AI • Active")
-                          .setContentText("Background listening active")
+                          .setContentTitle("SIYA AI • 20 Tools Active")
+                          .setContentText("Listening in background")
                           .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                           .setContentIntent(pendingIntent)
                           .build()
@@ -597,14 +730,11 @@ jobs:
                                       override fun onRmsChanged(rmsdB: Float) {}
                                       override fun onBufferReceived(buffer: ByteArray?) {}
                                       override fun onEndOfSpeech() {}
-                                      override fun onError(error: Int) {
-                                          restartListening()
-                                      }
+                                      override fun onError(error: Int) { restartListening() }
                                       override fun onResults(results: Bundle?) {
                                           val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                                           if (!matches.isNullOrEmpty()) {
-                                              val text = matches[0]
-                                              handleSpokenCommand(text)
+                                              handleSpokenCommand(matches[0])
                                           }
                                           restartListening()
                                       }
@@ -622,16 +752,14 @@ jobs:
                   serviceScope.launch {
                       val reply = toolManager.processQuery(text)
                       speak(reply)
-                      val intent = Intent("com.siya.ai.UPDATE_CHAT").apply {
+                      sendBroadcast(Intent("com.siya.ai.UPDATE_CHAT").apply {
                           putExtra("SPEAKER", "YOU")
                           putExtra("MESSAGE", text)
-                      }
-                      sendBroadcast(intent)
-                      val replyIntent = Intent("com.siya.ai.UPDATE_CHAT").apply {
+                      })
+                      sendBroadcast(Intent("com.siya.ai.UPDATE_CHAT").apply {
                           putExtra("SPEAKER", "SIYA")
                           putExtra("MESSAGE", reply)
-                      }
-                      sendBroadcast(replyIntent)
+                      })
                   }
               }
 
@@ -783,7 +911,7 @@ jobs:
                                   status.setTextColor(Color.parseColor("#00E5FF"))
                               }
                               override fun onError(error: Int) {
-                                  status.text = "● SIYA V1.6 • ONLINE"
+                                  status.text = "● SIYA V2.0 • 20 AI TOOLS ACTIVE"
                                   status.setTextColor(Color.parseColor("#00E676"))
                               }
                               override fun onResults(results: Bundle?) {
@@ -793,7 +921,7 @@ jobs:
                                       input.setText(spokenText)
                                       executeCommand(spokenText)
                                   }
-                                  status.text = "● SIYA V1.6 • ONLINE"
+                                  status.text = "● SIYA V2.0 • 20 AI TOOLS ACTIVE"
                                   status.setTextColor(Color.parseColor("#00E676"))
                               }
                               override fun onPartialResults(partialResults: Bundle?) {}
@@ -820,7 +948,7 @@ jobs:
                   }
 
                   val title = TextView(this).apply {
-                      text = "SIYA • PERSONAL AI"
+                      text = "SIYA • 20-AI ENGINES"
                       textSize = 24f
                       setTextColor(Color.WHITE)
                       gravity = Gravity.CENTER
@@ -828,7 +956,7 @@ jobs:
                   root.addView(title)
 
                   status = TextView(this).apply {
-                      text = "● SIYA V1.6 • BG TTS & SYSTEM ACTIONS READY"
+                      text = "● SIYA V2.0 • 20 AI TOOLS ONLINE"
                       textSize = 13f
                       gravity = Gravity.CENTER
                       setTextColor(Color.parseColor("#00E676"))
@@ -838,7 +966,7 @@ jobs:
 
                   val scroll = ScrollView(this)
                   chat = TextView(this).apply {
-                      text = "SIYA: Namaste sir! Mai SIYA hoon. Background audio listener active hai. Boliye kya hukm hai?"
+                      text = "SIYA: Namaste sir! Mai 20 AI tools ke sath ready hoon. Boliye kya hukm hai?"
                       textSize = 15f
                       setTextColor(Color.parseColor("#ECEFF1"))
                       setPadding(15, 20, 15, 20)
