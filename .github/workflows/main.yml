@@ -120,8 +120,8 @@ jobs:
                   applicationId = "com.siya.ai"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 8
-                  versionName = "2.0"
+                  versionCode = 9
+                  versionName = "2.1"
               }
 
               signingConfigs {
@@ -256,9 +256,6 @@ jobs:
                   .readTimeout(18, TimeUnit.SECONDS)
                   .build()
 
-              private var isFlashOn = false
-
-              // TOOL 1: Battery Engine
               fun getBatteryStatus(): String {
                   val ifilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
                   val b = context.registerReceiver(null, ifilter)
@@ -270,13 +267,11 @@ jobs:
                   return "Aapka phone ${pct.toInt()}% charged hai. ${if (isCharging) "Charging connect hai ⚡" else "Battery par chal raha hai."}"
               }
 
-              // TOOL 2: Time & Date Engine
               fun getTimeDate(): String {
                   val sdf = SimpleDateFormat("hh:mm a, EEEE, dd MMMM yyyy", Locale.getDefault())
                   return "Abhi samay hai: ${sdf.format(Date())}."
               }
 
-              // TOOL 3: Camera Launcher
               fun openCamera(): String {
                   return try {
                       val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
@@ -285,19 +280,16 @@ jobs:
                   } catch (e: Exception) { "Camera error: ${e.message}" }
               }
 
-              // TOOL 4: Flashlight Controller
               fun toggleTorch(turnOn: Boolean): String {
                   return try {
                       val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                       val id = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
                           ?: return "Torch hardware nahi mila."
                       cm.setTorchMode(id, turnOn)
-                      isFlashOn = turnOn
                       if (turnOn) "Flashlight on kar di hai." else "Flashlight off kar di hai."
                   } catch (e: Exception) { "Torch error: ${e.message}" }
               }
 
-              // TOOL 5: Universal Media Control
               fun controlMedia(play: Boolean): String {
                   return try {
                       val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -308,7 +300,6 @@ jobs:
                   } catch (e: Exception) { "Media control error: ${e.message}" }
               }
 
-              // TOOL 6: Instagram Direct Launcher
               fun openInstagram(): String {
                   val pm = context.packageManager
                   for (pkg in listOf("com.instagram.android", "com.instagram.lite")) {
@@ -333,7 +324,6 @@ jobs:
                   }
               }
 
-              // TOOL 7: App Router (YouTube, WhatsApp, Spotify, Settings)
               fun openApp(name: String): String {
                   if (name.lowercase() == "instagram") return openInstagram()
                   val pm = context.packageManager
@@ -356,7 +346,6 @@ jobs:
                   return searchGoogle(name)
               }
 
-              // TOOL 8: Google Search Redirect
               fun searchGoogle(q: String): String {
                   return try {
                       val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(q, "UTF-8")}")).apply {
@@ -367,7 +356,6 @@ jobs:
                   } catch (e: Exception) { "Search issue: ${e.message}" }
               }
 
-              // TOOL 9: wttr.in Live Weather API
               suspend fun fetchWeather(city: String): String = withContext(Dispatchers.IO) {
                   try {
                       val clean = if (city.isBlank()) "Bhopal" else city.trim()
@@ -380,7 +368,6 @@ jobs:
                   } catch (e: Exception) { "Weather error: ${e.message}" }
               }
 
-              // TOOL 10: Hindi Wikipedia Knowledge API
               suspend fun fetchHindiWiki(query: String): String? = withContext(Dispatchers.IO) {
                   try {
                       val enc = URLEncoder.encode(query.trim(), "UTF-8")
@@ -393,7 +380,6 @@ jobs:
                   } catch (_: Exception) { null }
               }
 
-              // TOOL 11: English Wikipedia Knowledge API
               suspend fun fetchEnglishWiki(query: String): String? = withContext(Dispatchers.IO) {
                   try {
                       val enc = URLEncoder.encode(query.trim(), "UTF-8")
@@ -406,7 +392,6 @@ jobs:
                   } catch (_: Exception) { null }
               }
 
-              // TOOL 12: Open Exchange Rates Currency API
               suspend fun convertCurrency(amount: Double, from: String, to: String): String = withContext(Dispatchers.IO) {
                   try {
                       val url = "https://open.er-api.com/v6/latest/$from"
@@ -421,7 +406,6 @@ jobs:
                   } catch (e: Exception) { "Currency conversion error: ${e.message}" }
               }
 
-              // TOOL 13: DuckDuckGo Instant Answer API
               suspend fun duckInstantAnswer(query: String): String? = withContext(Dispatchers.IO) {
                   try {
                       val enc = URLEncoder.encode(query, "UTF-8")
@@ -435,7 +419,6 @@ jobs:
                   } catch (_: Exception) { null }
               }
 
-              // TOOL 14: DuckDuckGo Web Snippet Scraper API
               suspend fun duckWebSnippet(query: String): String? = withContext(Dispatchers.IO) {
                   try {
                       val enc = URLEncoder.encode(query, "UTF-8")
@@ -449,7 +432,6 @@ jobs:
                   } catch (_: Exception) { null }
               }
 
-              // TOOL 15: Math Calculator Evaluator
               fun evaluateMath(expr: String): String? {
                   return try {
                       val clean = expr.replace("x", "*").replace("X", "*").filter { it.isDigit() || "+-*/.".contains(it) }
@@ -471,7 +453,6 @@ jobs:
                   } catch (_: Exception) { null }
               }
 
-              // TOOL 16: Official Joke API
               suspend fun fetchOfficialJoke(): String = withContext(Dispatchers.IO) {
                   try {
                       val req = Request.Builder().url("https://official-joke-api.appspot.com/random_joke").build()
@@ -479,20 +460,18 @@ jobs:
                           val json = JSONObject(res.body?.string() ?: "{}")
                           "${json.getString("setup")} - ${json.getString("punchline")}"
                       }
-                  } catch (_: Exception) { "Ek aadmi doctor ke paas gaya aur bola: Doctor sahab, sab log mujhe ignore karte hain! Doctor: Next please!" }
+                  } catch (_: Exception) { "Doctor: Aapko aaram ki sakht zarurat hai. Patient: Fir davai kyu likh rahe ho? Doctor: Davai meri fees nikalne ke liye hai!" }
               }
 
-              // TOOL 17: Hindi Joke Engine
               fun getHindiJoke(): String {
                   val jokes = listOf(
-                      "Pappu exam me blank paper chhod kar aa gaya. Teacher: Kuch likha kyu nahi? Pappu: Khamoshi ko alfaaz ki zarurat nahi hoti!",
-                      "Master ji: Batao aalashya kya hai? Student: Sab pata hone ke baad bhi jawab na dena!",
-                      "Santa: Yaar kal raat sapne me ek ladki ne mujhe propose kiya. Banta: Fir tune kya bola? Santa: Maine bol diya ki mai padhai par focus kar raha hoon!"
+                      "Pappu: Yaar train me chain kyu hoti hai? Banta: Taaki train gir na jaye aur use baandh sakein!",
+                      "Teacher: Tum class me hamesha soye kyu rehte ho? Student: Sir, gyaan ki baatein sunkar shaanti mil jaati hai!",
+                      "Master: Batao shanti kahan milti hai? Student: Sir, jab mobile switch off ho!"
                   )
                   return jokes.random()
               }
 
-              // TOOL 18: ZenQuotes Daily Motivational API
               suspend fun fetchMotivationalQuote(): String = withContext(Dispatchers.IO) {
                   try {
                       val req = Request.Builder().url("https://zenquotes.io/api/random").build()
@@ -501,12 +480,11 @@ jobs:
                           if (arr.length() > 0) {
                               val obj = arr.getJSONObject(0)
                               "\"${obj.getString("q")}\" — ${obj.getString("a")}"
-                          } else "Koshish karne walon ki kabhi haar nahi hoti!"
+                          } else "Manzil unhi ko milti hai jinke sapno me jaan hoti hai!"
                       }
-                  } catch (_: Exception) { "Mehnat itni khamoshi se karo ki safalta shor macha de." }
+                  } catch (_: Exception) { "Sapne wo nahi jo hum sote waqt dekhte hain, sapne wo hain jo hume sone nahi dete." }
               }
 
-              // TOOL 19: Advice Slip Life Wisdom API
               suspend fun fetchAdvice(): String = withContext(Dispatchers.IO) {
                   try {
                       val req = Request.Builder().url("https://api.adviceslip.com/advice").build()
@@ -515,29 +493,25 @@ jobs:
                           val slip = json.getJSONObject("slip")
                           "SIYA Advice: ${slip.getString("advice")}"
                       }
-                  } catch (_: Exception) { "Hamesha positively socho aur apne lakshya par focus rakho!" }
+                  } catch (_: Exception) { "Apne kaam par lagatar focus rakhein aur distractions se bachein." }
               }
 
-              // TOOL 20: IP Geolocation City & ISP API
               suspend fun fetchIPDetails(): String = withContext(Dispatchers.IO) {
                   try {
                       val req = Request.Builder().url("http://ip-api.com/json").build()
                       client.newCall(req).execute().use { res ->
                           val json = JSONObject(res.body?.string() ?: "{}")
-                          "Network Location: ${json.optString("city", "Unknown")}, ${json.optString("regionName", "")}, Provider: ${json.optString("isp", "Cellular")}"
+                          "Network: ${json.optString("city", "Bhopal")}, ${json.optString("regionName", "MP")}, Provider: ${json.optString("isp", "Jio/Airtel")}"
                       }
-                  } catch (e: Exception) { "Network location fetch error: ${e.message}" }
+                  } catch (e: Exception) { "Network error: ${e.message}" }
               }
 
-              // High-level Router coordinating all 20 AI engines
               suspend fun processQuery(query: String): String {
                   val lower = query.lowercase().trim()
 
-                  // Math calculation
                   val mathRes = evaluateMath(lower)
                   if (mathRes != null) return mathRes
 
-                  // Jokes & Motivation
                   if (lower.contains("joke") || lower.contains("chutkula") || lower.contains("चुटकुला") || lower.contains("मजाक")) {
                       return if (lower.contains("hindi") || lower.contains("हिंदी")) getHindiJoke() else fetchOfficialJoke()
                   }
@@ -551,7 +525,6 @@ jobs:
                       return fetchIPDetails()
                   }
 
-                  // Hardware & Apps
                   if (lower.contains("camera") || lower.contains("photo") || lower.contains("कैमरा")) return openCamera()
                   if (lower.contains("instagram") || lower.contains("insta") || lower.contains("इंस्टाग्राम")) return openInstagram()
                   if (lower.contains("whatsapp") || lower.contains("व्हाट्सएप")) return openApp("whatsapp")
@@ -604,7 +577,6 @@ jobs:
                       return "Haanji sir! Boliye, mai aapke 20 AI tools ke sath taiyaar hoon. Kya help chahiye?"
                   }
 
-                  // Fallback: Multi-tier Knowledge Search
                   val duckInstant = duckInstantAnswer(query)
                   if (duckInstant != null) return duckInstant
 
@@ -653,11 +625,13 @@ jobs:
               private lateinit var toolManager: ToolManager
               private val handler = Handler(Looper.getMainLooper())
               private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+              private var isServiceRunning = true
 
               override fun onBind(intent: Intent?): IBinder? = null
 
               override fun onCreate() {
                   super.onCreate()
+                  isServiceRunning = true
                   toolManager = ToolManager(this)
                   tts = TextToSpeech(this, this)
                   startForegroundNotification()
@@ -680,7 +654,7 @@ jobs:
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val channel = NotificationChannel(
                           channelId,
-                          "SIYA 20-AI Engine",
+                          "SIYA Always-Active Brain",
                           NotificationManager.IMPORTANCE_LOW
                       )
                       val manager = getSystemService(NotificationManager::class.java)
@@ -688,31 +662,42 @@ jobs:
                   }
 
                   val openAppIntent = Intent(this, MainActivity::class.java).apply {
-                      putExtra("TRIGGER_VOICE", true)
                       flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                   }
-                  val pendingIntent = PendingIntent.getActivity(
+                  val pendingOpen = PendingIntent.getActivity(
                       this,
                       0,
                       openAppIntent,
                       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                   )
 
+                  val stopIntent = Intent(this, SiyaBackgroundService::class.java).apply {
+                      action = "ACTION_STOP_SIYA"
+                  }
+                  val pendingStop = PendingIntent.getService(
+                      this,
+                      1,
+                      stopIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+
                   val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       Notification.Builder(this, channelId)
-                          .setContentTitle("SIYA AI • 20 Tools Active")
-                          .setContentText("Tap to command or speak anytime")
+                          .setContentTitle("SIYA AI • Always Running")
+                          .setContentText("Continuous voice listener active. Tap STOP to exit.")
                           .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                          .setContentIntent(pendingIntent)
+                          .setContentIntent(pendingOpen)
+                          .addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP SIYA", pendingStop)
                           .setOngoing(true)
                           .build()
                   } else {
                       @Suppress("DEPRECATION")
                       Notification.Builder(this)
-                          .setContentTitle("SIYA AI • 20 Tools Active")
-                          .setContentText("Listening in background")
+                          .setContentTitle("SIYA AI • Always Running")
+                          .setContentText("Continuous listening active")
                           .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                          .setContentIntent(pendingIntent)
+                          .setContentIntent(pendingOpen)
+                          .addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP SIYA", pendingStop)
                           .build()
                   }
 
@@ -730,13 +715,16 @@ jobs:
                                       override fun onRmsChanged(rmsdB: Float) {}
                                       override fun onBufferReceived(buffer: ByteArray?) {}
                                       override fun onEndOfSpeech() {}
-                                      override fun onError(error: Int) { restartListening() }
+                                      override fun onError(error: Int) {
+                                          if (isServiceRunning) restartListening()
+                                      }
                                       override fun onResults(results: Bundle?) {
                                           val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                                           if (!matches.isNullOrEmpty()) {
-                                              handleSpokenCommand(matches[0])
+                                              val text = matches[0]
+                                              handleSpokenCommand(text)
                                           }
-                                          restartListening()
+                                          if (isServiceRunning) restartListening()
                                       }
                                       override fun onPartialResults(partialResults: Bundle?) {}
                                       override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -764,6 +752,7 @@ jobs:
               }
 
               private fun startListeningInternal() {
+                  if (!isServiceRunning) return
                   try {
                       val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                           putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -774,10 +763,16 @@ jobs:
               }
 
               private fun restartListening() {
-                  handler.postDelayed({ startListeningInternal() }, 2000)
+                  if (!isServiceRunning) return
+                  handler.postDelayed({ startListeningInternal() }, 1500)
               }
 
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == "ACTION_STOP_SIYA") {
+                      stopSelfManually()
+                      return START_NOT_STICKY
+                  }
+
                   val spokenText = intent?.getStringExtra("SPEAK_TEXT")
                   if (!spokenText.isNullOrBlank()) {
                       speak(spokenText)
@@ -785,11 +780,24 @@ jobs:
                   return START_STICKY
               }
 
-              override fun onDestroy() {
-                  serviceScope.cancel()
+              private fun stopSelfManually() {
+                  isServiceRunning = false
+                  handler.removeCallbacksAndMessages(null)
+                  speechRecognizer?.stopListening()
+                  speechRecognizer?.destroy()
+                  speechRecognizer = null
                   tts?.stop()
                   tts?.shutdown()
-                  speechRecognizer?.destroy()
+                  tts = null
+                  serviceScope.cancel()
+                  stopForeground(STOP_FOREGROUND_REMOVE)
+                  stopSelf()
+
+                  sendBroadcast(Intent("com.siya.ai.SERVICE_STOPPED"))
+              }
+
+              override fun onDestroy() {
+                  stopSelfManually()
                   super.onDestroy()
               }
           }
@@ -807,9 +815,6 @@ jobs:
           import android.graphics.Color
           import android.os.Build
           import android.os.Bundle
-          import android.speech.RecognitionListener
-          import android.speech.RecognizerIntent
-          import android.speech.SpeechRecognizer
           import android.view.Gravity
           import android.view.View
           import android.view.inputmethod.InputMethodManager
@@ -822,13 +827,21 @@ jobs:
               private lateinit var input: EditText
               private lateinit var askBtn: Button
               private lateinit var micBtn: Button
+              private lateinit var stopBtn: Button
               private lateinit var status: TextView
 
-              private var speechRecognizer: SpeechRecognizer? = null
               private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
               private val chatReceiver = object : BroadcastReceiver() {
                   override fun onReceive(context: Context?, intent: Intent?) {
+                      if (intent?.action == "com.siya.ai.SERVICE_STOPPED") {
+                          status.text = "● SIYA STOPPED (OFFLINE)"
+                          status.setTextColor(Color.RED)
+                          micBtn.text = "▶ START SIYA"
+                          micBtn.setBackgroundColor(Color.parseColor("#10B981"))
+                          appendLog("SYSTEM", "SIYA background listening band kar di gayi hai.")
+                          return
+                      }
                       val speaker = intent?.getStringExtra("SPEAKER") ?: return
                       val msg = intent.getStringExtra("MESSAGE") ?: return
                       appendLog(speaker, msg)
@@ -842,27 +855,15 @@ jobs:
                   setupUI()
                   checkPermissions()
                   startServiceBackground()
-                  initSpeechRecognizer()
 
-                  val filter = IntentFilter("com.siya.ai.UPDATE_CHAT")
+                  val filter = IntentFilter().apply {
+                      addAction("com.siya.ai.UPDATE_CHAT")
+                      addAction("com.siya.ai.SERVICE_STOPPED")
+                  }
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                       registerReceiver(chatReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
                   } else {
                       registerReceiver(chatReceiver, filter)
-                  }
-
-                  handleIntentTriggers(intent)
-              }
-
-              override fun onNewIntent(intent: Intent?) {
-                  super.onNewIntent(intent)
-                  handleIntentTriggers(intent)
-              }
-
-              private fun handleIntentTriggers(inIntent: Intent?) {
-                  if (inIntent == null) return
-                  if (inIntent.getBooleanExtra("TRIGGER_VOICE", false)) {
-                      listenVoice()
                   }
               }
 
@@ -892,52 +893,20 @@ jobs:
                       } else {
                           startService(sIntent)
                       }
+                      status.text = "● ALWAYS RUNNING • LISTENING ACTIVE"
+                      status.setTextColor(Color.parseColor("#00E676"))
+                      micBtn.text = "🎤 LISTENING..."
+                      micBtn.setBackgroundColor(Color.parseColor("#7C3AED"))
                   } catch (_: Exception) {}
               }
 
-              private fun initSpeechRecognizer() {
-                  if (SpeechRecognizer.isRecognitionAvailable(this)) {
-                      speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-                          setRecognitionListener(object : RecognitionListener {
-                              override fun onReadyForSpeech(params: Bundle?) {
-                                  status.text = "● LISTENING..."
-                                  status.setTextColor(Color.YELLOW)
-                              }
-                              override fun onBeginningOfSpeech() {}
-                              override fun onRmsChanged(rmsdB: Float) {}
-                              override fun onBufferReceived(buffer: ByteArray?) {}
-                              override fun onEndOfSpeech() {
-                                  status.text = "● PROCESSING..."
-                                  status.setTextColor(Color.parseColor("#00E5FF"))
-                              }
-                              override fun onError(error: Int) {
-                                  status.text = "● SIYA V2.0 • 20 AI TOOLS ACTIVE"
-                                  status.setTextColor(Color.parseColor("#00E676"))
-                              }
-                              override fun onResults(results: Bundle?) {
-                                  val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                                  if (!matches.isNullOrEmpty()) {
-                                      val spokenText = matches[0]
-                                      input.setText(spokenText)
-                                      executeCommand(spokenText)
-                                  }
-                                  status.text = "● SIYA V2.0 • 20 AI TOOLS ACTIVE"
-                                  status.setTextColor(Color.parseColor("#00E676"))
-                              }
-                              override fun onPartialResults(partialResults: Bundle?) {}
-                              override fun onEvent(eventType: Int, params: Bundle?) {}
-                          })
+              private fun stopServiceManually() {
+                  try {
+                      val sIntent = Intent(this, SiyaBackgroundService::class.java).apply {
+                          action = "ACTION_STOP_SIYA"
                       }
-                  }
-              }
-
-              private fun listenVoice() {
-                  val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                      putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                      putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
-                      putExtra(RecognizerIntent.EXTRA_PROMPT, "SIYA sun rahi hai, boliye...")
-                  }
-                  speechRecognizer?.startListening(intent)
+                      startService(sIntent)
+                  } catch (_: Exception) {}
               }
 
               private fun setupUI() {
@@ -948,15 +917,15 @@ jobs:
                   }
 
                   val title = TextView(this).apply {
-                      text = "SIYA • 20-AI ENGINES"
-                      textSize = 24f
+                      text = "SIYA • 24/7 ACTIVE ASSISTANT"
+                      textSize = 22f
                       setTextColor(Color.WHITE)
                       gravity = Gravity.CENTER
                   }
                   root.addView(title)
 
                   status = TextView(this).apply {
-                      text = "● SIYA V2.0 • 20 AI TOOLS ONLINE"
+                      text = "● ALWAYS RUNNING • LISTENING ACTIVE"
                       textSize = 13f
                       gravity = Gravity.CENTER
                       setTextColor(Color.parseColor("#00E676"))
@@ -966,7 +935,7 @@ jobs:
 
                   val scroll = ScrollView(this)
                   chat = TextView(this).apply {
-                      text = "SIYA: Namaste sir! Mai 20 AI tools ke sath ready hoon. Boliye kya hukm hai?"
+                      text = "SIYA: Namaste sir! Mai continuously sun rahi hoon aur background me chalti rahungi. Band karne ke liye STOP button dabayein."
                       textSize = 15f
                       setTextColor(Color.parseColor("#ECEFF1"))
                       setPadding(15, 20, 15, 20)
@@ -990,25 +959,43 @@ jobs:
                   val blParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 }
 
                   micBtn = Button(this).apply {
-                      text = "🎤 VOICE MIC"
+                      text = "🎤 LISTENING..."
                       setBackgroundColor(Color.parseColor("#7C3AED"))
                       setTextColor(Color.WHITE)
                   }
-                  btnLayout.addView(micBtn, LinearLayout.LayoutParams(0, -2, 1f))
+                  btnLayout.addView(micBtn, LinearLayout.LayoutParams(0, -2, 1.2f))
 
-                  val space = View(this)
-                  btnLayout.addView(space, LinearLayout.LayoutParams(15, 1))
+                  val space1 = View(this)
+                  btnLayout.addView(space1, LinearLayout.LayoutParams(10, 1))
+
+                  stopBtn = Button(this).apply {
+                      text = "🛑 STOP"
+                      setBackgroundColor(Color.parseColor("#EF4444"))
+                      setTextColor(Color.WHITE)
+                  }
+                  btnLayout.addView(stopBtn, LinearLayout.LayoutParams(0, -2, 1f))
+
+                  val space2 = View(this)
+                  btnLayout.addView(space2, LinearLayout.LayoutParams(10, 1))
 
                   askBtn = Button(this).apply {
                       text = "SEND"
                       setBackgroundColor(Color.parseColor("#00E5FF"))
                       setTextColor(Color.BLACK)
                   }
-                  btnLayout.addView(askBtn, LinearLayout.LayoutParams(0, -2, 1.2f))
+                  btnLayout.addView(askBtn, LinearLayout.LayoutParams(0, -2, 1f))
 
                   root.addView(btnLayout, blParams)
 
-                  micBtn.setOnClickListener { listenVoice() }
+                  micBtn.setOnClickListener {
+                      startServiceBackground()
+                      appendLog("SYSTEM", "SIYA ko continuous listening mode par start kar diya hai.")
+                  }
+
+                  stopBtn.setOnClickListener {
+                      stopServiceManually()
+                  }
+
                   askBtn.setOnClickListener {
                       val text = input.text.toString().trim()
                       if (text.isNotEmpty()) {
@@ -1049,7 +1036,6 @@ jobs:
 
               override fun onDestroy() {
                   unregisterReceiver(chatReceiver)
-                  speechRecognizer?.destroy()
                   scope.cancel()
                   super.onDestroy()
               }
